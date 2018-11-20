@@ -1,0 +1,67 @@
+{
+  "env": {
+    "browser": true,
+    "es6": true,
+    "node": true,
+    "jquery": true
+  },
+  "parserOptions": {
+    "sourceType": "module",
+    "ecmaVersion": 9
+  },
+  "extends": [
+    "prettier",
+    "eslint:recommended"
+  ],
+  "plugins": [
+    "prettier"
+  ],
+  "rules": {
+    "no-control-regex": 0,
+    "no-new-require": 2,
+    "no-path-concat": 2,
+    "no-process-exit": 0,
+    "no-sparse-arrays": 0,
+    "no-undef": "error",
+    "no-unused-vars": [
+      1,
+      {
+        "argsIgnorePattern": "res|next|^err"
+      }
+    ],
+    "no-template-curly-in-string": "error",
+    "arrow-body-style": [
+      2,
+      "as-needed"
+    ],
+    "no-param-reassign": [
+      0,
+      {
+        "props": false
+      }
+    ],
+    "no-console": 0,
+    "import/prefer-default-export": 0,
+    "import": 0,
+    "func-names": 0,
+    "space-before-function-paren": 0,
+    "comma-dangle": 0,
+    "quotes": [
+      2,
+      "single",
+      {
+        "avoidEscape": true,
+        "allowTemplateLiterals": true
+      }
+    ],
+    "prettier/prettier": [
+      "warn",
+      {
+        "trailingComma": "es5",
+        "singleQuote": true,
+        "printWidth": 130,
+        "bracketSpacing": false
+      }
+    ]
+  }
+}

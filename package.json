@@ -1,0 +1,30 @@
+{
+  "name": "bytestash",
+  "version": "1.0.0",
+  "description": "A secure archive chunking system with AES encryption",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test"
+  },
+  "keywords": [
+    "bytes",
+    "secure",
+    "chunks",
+    "chunking",
+    "archive",
+    "encryption",
+    "algorithm"
+  ],
+  "author": "Miraculous Owonubi <omiraculous@gmail.com>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "archiver": "^3.0.0",
+    "chalk": "^2.4.1",
+    "commander": "^2.17.1",
+    "lodash": "^4.17.10",
+    "progress": "^2.0.0",
+    "progress-stream": "^2.0.0",
+    "split-file": "^2.1.0",
+    "through2": "^2.0.3"
+  }
+}
