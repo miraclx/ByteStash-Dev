@@ -1,4 +1,4 @@
-const fs = require('fs'),
+let fs = require('fs'),
   path = require('path'),
   util = require('util'),
   stream = require('stream'),
@@ -13,10 +13,10 @@ const fs = require('fs'),
  */
 class ReadChunker {
   constructor(file, output, options) {
-    if (!(this instanceof ReadChunker)) return new ReadChunker(file, options);
-    if (typeof file !== 'string') throw Error('file parameter must be of type `string`');
+    if (typeof file !== 'string') throw Error('<file> parameter must be of type `string`');
     if (typeof output === 'object' && !Array.isArray(output))
-      (options = output), (output = options.output || file.replace(/(?=.+)(\.\w+)$/, '%s$1'));
+      (options = output), (output = options.output || file.replace(/(?=.+)(\.\w+)$/, '%{numberPad%}$1'));
+    if (typeof options !== 'object' && options !== undefined) throw Error('<options> parameter if specified must be an object');
     let prefs = (this.prefs = mergeOpts(options || {}, {
       objectMode: true,
       file: {
@@ -95,37 +95,61 @@ class WriteChunker {
     this._write = function(chunkInfo, encoding, callback) {
       let {inputStream} = chunkInfo;
       let outputStream = fs.createWriteStream(chunkInfo.outputFile);
-      inputStream.on('end', () => {
-        if (chunkInfo.number == chunkInfo.nParts) self.emit('complete');
-        callback();
+      inputStream.on('error', callback);
+      // When we're done with a chunk, emit the done event
+      outputStream.on('finish', () => {
+        self.emit('done', {in: inputStream.path, out: chunkInfo.outputFile});
+        callback(null);
       });
       this.pipes
-        .reduce((thisStream, funcOftStream, index) => {
-          let _stream = funcOftStream(chunkInfo);
+        .reduce((thisStream, {f, persist, label}, index) => {
+          let _stream = f(chunkInfo.size, chunkInfo.outputFile, persist);
           if (!(_stream && _stream.readable && _stream.writable))
-            throw Error(`Functional pipe at index <${index}> should return a Duplex stream`);
-          return _stream;
+            throw Error(`Function labelled \`${label}\` should return a Duplex stream`);
+          return thisStream.pipe(_stream);
         }, inputStream)
         .pipe(outputStream);
     };
+    // Emits
+    // `finish` When all chunks have finished
+    // `done` When a chunk has finished
+    // `error` When theres an error with a chunk copy
   }
   /**
-   *
+   * @param {String} label Label for identifying function
    * @param {(() => stream.Duplex)} funcOftStream Function returning a Duplex stream
    */
-  attach(funcOftStream) {
+  attach(label, funcOftStream) {
     if (typeof funcOftStream !== 'function')
       throw Error(
         'You can only pipe instances of Duplex streams or functions returning this. Consider a Through or Transform stream'
       );
-    this.pipes.push(funcOftStream);
+    this.pipes.push({f: funcOftStream, persist: {}, label});
     return this;
   }
 }
 util.inherits(WriteChunker, stream.Writable);
 
 class ReadMerger {
-  constructor() {
+  constructor(files, output, options) {
+    if (!Array.isArray(files)) throw Error('<files> parameter must be an Array');
+    if (typeof output !== 'string') throw Error('<output> parameter must be specified as a string file path');
+    if (typeof options !== 'object' && options !== undefined) throw Error('<options> parameter if specified must be an object');
+    let prefs = (this.prefs = mergeOpts(options || {}, {
+      objectMode: true,
+      files: Array.from(files)
+        .map(file => {
+          let stat = fs.statSync(file);
+          if (stat.isDirectory()) throw Error('Cant merge folders, is this really part of a file');
+          else if (!stat.isFile()) throw Error('Specified part file is not valid');
+          return {file, stat};
+        })
+        .map(({file, stat}) => ({
+          path: file,
+          stat,
+          parsed: path.parse(file),
+        })),
+    }));
     stream.Readable.call(this, {
       objectMode: true,
     });
@@ -142,4 +166,9 @@ class WriteMerger {
 }
 util.inherits(WriteMerger, stream.Writable);
 
-module.exports = {ReadChunker, WriteChunker};
+module.exports = {
+  ReadChunker,
+  WriteChunker,
+  ReadMerger,
+  WriteMerger,
+};
