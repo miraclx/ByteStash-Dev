@@ -1,9 +1,11 @@
-import parseRatio from './parse-ratio';
-import parseBytes from './parse-bytes';
-const {merge} = require('lodash');
-import {format} from 'util';
-import chalk from 'chalk';
-import progressStream from 'progress-stream';
+let {format, inherits} = require('util'),
+  EventEmitter = require('events'),
+  chalk = require('chalk'),
+  progressStream = require('progress-stream'),
+  {merge} = require('lodash'),
+  parseRatio = require('./parse-ratio'),
+  parseBytes = require('./parse-bytes'),
+  parseTemplate = require('./parse-template');
 
 var _globOpts = {
   template: '',
@@ -15,10 +17,11 @@ var _globOpts = {
     separator: '',
     color: ['black', 'bgGreen'],
   },
-  flipper: '|/-\\',
-  get length() {
+  forceFirst: false,
+  length() {
     return Math.floor(process.stdout.columns / 2 - 20);
   },
+  flipper: ['|', '/', '-', '\\'],
   _template: {},
 };
 
@@ -27,27 +30,11 @@ var _defaultOptions = merge({}, _globOpts, {
 });
 
 var _streamOpts = merge({}, _globOpts, {
+  forceFirst: true,
   template:
     '%{label%}: |%{bar%}| %{slot:percentage%}% %{flipper%} %{slot:size%}/%{slot:size:total%} %{slot:eta%}s [%{percentage%}% @ %{eta%}s %{size%}/%{size:total%}]',
   progress: {},
 });
-
-/**
- * Parse a template, replace parts with specified values
- * @param {String} template Template to be parsed
- * @param {*} features Object containing the object parts with replaceable values
- */
-function parseTemplate(template, features) {
-  for (let spec in features) {
-    var regex = new RegExp(`%{${spec}%}`, 'g');
-    var replacement = features[spec];
-    template = template.replace(
-      regex,
-      regex.test(replacement) && !replacement.includes(`%{${spec}%}`) ? parseTemplate(replacement, features) : replacement
-    );
-  }
-  return template;
-}
 
 /**
  * Get a current flipper
@@ -82,6 +69,13 @@ function getBar(filled, empty, opts) {
   return colorize(filler.repeat(filled)).concat(blank.repeat(empty));
 }
 
+function parseBar(bar, fillable, value) {
+  fillable = Math.round(fillable);
+  let filled = Math.round((Math.floor(value) / 100) * fillable);
+  let empty = fillable - filled;
+  return bar.styler(filled, empty, bar.opts);
+}
+
 class ProgressBar {
   /**
    * Build a progress bar
@@ -92,9 +86,11 @@ class ProgressBar {
   constructor(total = 100, arr = [100], opts) {
     this.total = total;
     this.opts = merge({}, _defaultOptions, opts);
-    this.cores = {label: 'Loading', _attach: {append: []}};
+    this.cores = {label: 'Loading', append: []};
     this.slots = parseRatio(arr, 100).map(level => ({level, value: 0}));
     this.styler = getBar;
+
+    // EventEmitter.call(this);
   }
   /**
    * Label the progressbar while returning itself
@@ -132,7 +128,7 @@ class ProgressBar {
    * @param {Number|Number[]} levels Level(s) to update the slots to
    */
   progress(levels) {
-    [this, ...this.cores._attach.append.filter(block => block.inherit).map(block => block.bar)].map(bar => {
+    [this, ...this.cores.append.filter(block => block.inherit).map(block => block.bar)].map(bar => {
       levels = levels || bar.slots.map(slot => slot.value);
       levels =
         typeof levels === 'number'
@@ -140,12 +136,12 @@ class ProgressBar {
           : Array.isArray(levels)
             ? levels
             : bar.slots.map(v => v.value);
-      var invalids = levels.reduce((obj, value, index) => (value > 100 && obj.push({value, index}), obj), []);
+      var invalids = levels.reduce((obj, value, index) => ((value < 0 || value > 100) && obj.push({value, index}), obj), []);
       if (invalids.length) {
         throw Error(
           `Percentage value in <levels>[${invalids.map(v => v.index).join()}]:[${invalids
             .map(v => v.value)
-            .join()}] is greater than 100`
+            .join()}] is not valued in the range of 0..=100`
         );
       }
       bar.slots = bar.slots.map((slot, index) => ((slot.value = levels[index] || slot.value), slot));
@@ -165,13 +161,15 @@ class ProgressBar {
   }
   /**
    * Draw the progressbar, apply template options to the template
-   * @param {*} template The template to use on the drawn progress bar
+   * @param {String|Object} template The template to use on the drawn progress bar or an array of predrawn progressbar from `this.constructBar` like `this.oldBar`
    */
   draw(template) {
-    var result = [
-      this.constructBar(template),
-      ...this.cores._attach.append.map(block => block.bar.constructBar(block.inherit ? template : null)),
-    ];
+    var result = Array.isArray(template)
+      ? template
+      : (this.oldBar = [
+          ...this.constructBar(template).split('\n'),
+          ...this.cores.append.map(block => block.bar.constructBar(block.inherit ? template : null)),
+        ]);
     this.print(`bar${result.length > 1 ? `+${result.length - 1}` : ''}`, result.join('\n'));
     this.hasBarredOnce = true;
     return this;
@@ -181,14 +179,26 @@ class ProgressBar {
    * @param {*} template The template to use on the drawn progress bar
    */
   constructBar(template) {
-    let bar = this,
-      bars = this.slots.map(({level, value}) => {
-        let fillable = Math.floor((level / 100) * bar.opts.length);
-        let filled = Math.floor((value / 100) * fillable);
-        let empty = fillable - filled;
-        return this.styler(filled, empty, this.opts);
-      }),
-      _template = {
+    let bars = !this.opts.forceFirst
+        ? this.slots.map(({level, value}) =>
+            parseBar(
+              this,
+              Math.round((level / 100) * (typeof this.opts.length == 'function' ? this.opts.length() : this.opts.length)),
+              value
+            )
+          )
+        : [
+            parseBar(
+              this,
+              typeof this.opts.length == 'function' ? this.opts.length() : this.opts.length,
+              this.average().percentage
+            ),
+          ],
+      _template = Array.isArray(this.opts.template) ? this.opts.template.join('\n') : this.opts.template;
+    this.opts._template = template = merge(
+      {},
+      this.opts._template,
+      {
         bar: bars.join(this.opts.bar.separator || ''),
         flipper: flipper(++flipper.count, this.opts.flipper),
         label: this.label(),
@@ -198,8 +208,10 @@ class ProgressBar {
         },
         completed: this.average(2).value,
         total: this.total,
-      };
-    return parseTemplate(bar.opts.template, merge({}, bar.opts._template || {}, _template, template));
+      },
+      template
+    );
+    return parseTemplate(_template, template);
   }
   /**
    * Print a message after a bar `draw` interrupt
@@ -218,11 +230,11 @@ class ProgressBar {
       process.stdout.write(`${justLogged ? '\n' : ''}${format(...arr)}`);
     }
     var addonPack,
-      addons = this.hasBarredOnce && !this.justLogged ? this.cores._attach.append.length : 0;
+      addons = this.hasBarredOnce && !this.justLogged ? this.oldBar.length - 1 : 0;
     this.justLogged =
       type === 'bar' && content.length === 1
         ? !!cleanWrite(content, this.justLogged, addons)
-        : (addonPack = type.match(/bar\+(\d)/)) !== null
+        : (addonPack = type.match(/^bar\+(\d)/)) !== null
           ? !!cleanWrite(content, this.justLogged, this.hasBarredOnce ? addonPack[1] : addons)
           : type === 'end'
             ? !!cleanWrite(content, !this.opts.clean, addons)
@@ -234,6 +246,7 @@ class ProgressBar {
    * @param {String} message The content to be written to `stdout` after to ending the bar
    */
   end(...message) {
+    if (this.justLogged) this.draw(this.oldBar);
     if (message.length) this.print('end', ...message);
     this.isEnded = true;
     return this;
@@ -260,29 +273,20 @@ class ProgressBar {
   }
   /**
    * Append the specified bar after `this`
-   * - Alias for `this.attach(bar, 'append', inherit);`
    * @param {ProgressBar} bar The bar to be appended
    * @param {Boolean} inherit Whether or not to inherit bar templates from `this`
    */
   append(bar, inherit = false) {
     if (!ProgressBar.isBar(bar) && !bar.opts.template) throw Error('The Parameter <bar> is not a progressbar or a hanger');
-    this.cores._attach.append.push({bar, inherit});
-    bar.cores._attach.parent = this;
+    this.cores.append.push({bar, inherit});
+    bar.cores.isKid = true;
     return this;
-  }
-  /**
-   * Get the parent the progressbar is attached to
-   * - returns `this` in the absence of a parent
-   * @returns {ProgressBar|this} Parent bar
-   */
-  parent() {
-    return this.cores._attach.parent || this;
   }
   /**
    * Find out the progressbar is appended to another
    */
   get isChild() {
-    return !!this.cores._attach.parent;
+    return !!this.cores.isKid;
   }
   /**
    * Check if the progressbar is active.
@@ -321,37 +325,36 @@ class ProgressBar {
     if (bar.opts.template === _defaultOptions.template) bar.opts.template = merge({}, _streamOpts, opts).template;
     var streamGenerator = this.rawStreamify(bar, (bar, slotLevel, total = bar.total) => {
       if (!ProgressBar.isBar(bar)) throw Error('The Parameter is not a progressBar');
-      var through = progressStream(merge({}, {time: 100, length: total}, bar.opts.progress));
+      var through = progressStream(merge({time: 100, length: total}, bar.opts.progress));
       ((through.bar = bar), through)
         .on('progress', progress => {
           if (bar.isEnded) return;
           through.emit('tick', bar);
-          var _template = merge(
-            {},
-            {
-              'slot:bar': (value => {
-                let fillable = Math.floor(bar.opts.length);
-                let filled = Math.floor((value / 100) * fillable);
-                let empty = fillable - filled;
-                return bar.styler(filled, empty, bar.opts);
-              })(progress.percentage),
-
-              'slot:size': parseBytes(progress.transferred, 2, {shorten: true}),
-              'slot:size:total': parseBytes(progress.length, 2, {shorten: true}),
-
-              size: parseBytes(bar.average().value, 2, {shorten: true}),
-              'size:total': parseBytes(bar.total, 2, {shorten: true}),
-
-              'slot:percentage': progress.percentage.toFixed(0),
-              percentage: bar.average(0).percentage,
-
-              'slot:eta': progress.eta,
-              eta: Math.round(bar.average().remaining / progress.speed),
-            },
-            bar.opts._template
-          );
-          var level = bar.slots.map((...[, index]) => ++index === slotLevel && progress.percentage);
-          (actor || ((bar, level, _template) => bar.progress(level).draw(_template))).call(null, bar, level, _template);
+          var _template = {
+            'slot:bar': parseBar(
+              bar,
+              typeof bar.opts.length == 'function' ? bar.opts.length() : bar.opts.length,
+              progress.percentage
+            ),
+            'slot:size': parseBytes(progress.transferred, 2, {shorten: true}),
+            'slot:size:total': parseBytes(progress.length, 2, {shorten: true}),
+            'slot:percentage': progress.percentage.toFixed(0),
+            'slot:eta': progress.eta,
+          };
+          var level = bar.slots.map((...[, index]) => ++index === slotLevel && Math.floor(progress.percentage));
+          // Total slottage
+          (
+            actor ||
+            ((bar, level, _template) =>
+              bar.progress(level).draw(
+                merge(_template, {
+                  'size:total': parseBytes(bar.total, 2, {shorten: true}),
+                  size: parseBytes(bar.average().value, 2, {shorten: true}),
+                  percentage: bar.average(0).percentage,
+                  eta: Math.round(bar.average().remaining / progress.speed),
+                })
+              ))
+          ).call(null, bar, level, _template);
         })
         .once('error', () => bar.end())
         .once('finish', () => through.emit('complete', bar));
@@ -391,5 +394,6 @@ class ProgressBar {
     return bar instanceof this;
   }
 }
+// inherits(ProgressBar, EventEmitter);
 
-export default ProgressBar;
+module.exports = ProgressBar;
