@@ -1,7 +1,7 @@
 #!/bin/env node
-var commander = require('commander');
+let commander = require('commander');
 
-var bytestash = {
+let bytestash = {
   version: '1.0.0',
   author: {
     name: 'Miraculous Owonubi',

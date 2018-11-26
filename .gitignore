@@ -1,1 +1,10 @@
+
 node_modules
+
+resource
+
+test\.dir
+
+package-lock\.json
+
+libs/\.bck/

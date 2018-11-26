@@ -1,11 +1,11 @@
-var crypto = require('crypto');
-var fs = require('fs'),
+let crypto = require('crypto');
+let fs = require('fs'),
   progress = require('progress-stream'),
   ProgressBar = require('./libs/ProgressBar.js');
 
 // var tmp;
 
-var bytestash = {
+let bytestash = {
   version: '1.1.0',
   algorithm: 'aes-256-cbc',
   salt(key) {
