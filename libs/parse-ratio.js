@@ -12,7 +12,7 @@
  *  // Specifying a maximum count value
  *  > parseRatio([64,128,256], 512) // => [64,128,256,64]
  */
-module.exports = function parseRatio(ratio, max = 100) {
+module.exports = function parseRatio(ratio, max = 100, fixed = 100) {
   var split, total;
   ratio = (typeof ratio === 'number'
     ? ratio < max
@@ -37,6 +37,6 @@ module.exports = function parseRatio(ratio, max = 100) {
       : total === max
         ? split
         : [100]
-  ).map(e => parseFloat(parseFloat(e).toFixed(2)));
+  ).map(e => parseFloat(parseFloat(e).toFixed(fixed)));
   return ratio;
 };

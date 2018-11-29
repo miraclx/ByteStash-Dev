@@ -45,8 +45,7 @@ var engine = {
 
     if (outputFile == file) outputFile = checkFile(outputFile);
 
-    let progressStream = ProgressBar.stream(fs.statSync(file).size, 100),
-      {bar} = progressStream;
+    let progressStream = ProgressBar.stream(fs.statSync(file).size, 100);
 
     fs.createReadStream(file, {highWaterMark: 50})
       .pipe(randomiZe.stream)

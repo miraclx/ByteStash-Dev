@@ -1,6 +1,6 @@
 let {format, inherits} = require('util'),
-  EventEmitter = require('events'),
   chalk = require('chalk'),
+  EventEmitter = require('events'),
   progressStream = require('progress-stream'),
   {merge} = require('lodash'),
   parseRatio = require('./parse-ratio'),
@@ -87,9 +87,10 @@ class ProgressBar {
     this.total = total;
     this.opts = merge({}, _defaultOptions, opts);
     this.cores = {label: 'Loading', append: []};
-    this.slots = parseRatio(arr, 100).map(level => ({level, value: 0}));
+    this.slots = parseRatio(arr, 100, 2)
+      .filter(v => v != 0)
+      .map(level => ({level, value: 0}));
     this.styler = getBar;
-
     // EventEmitter.call(this);
   }
   /**
@@ -195,7 +196,7 @@ class ProgressBar {
             ),
           ],
       _template = Array.isArray(this.opts.template) ? this.opts.template.join('\n') : this.opts.template;
-    this.opts._template = template = merge(
+    template = merge(
       {},
       this.opts._template,
       {
@@ -394,6 +395,5 @@ class ProgressBar {
     return bar instanceof this;
   }
 }
-// inherits(ProgressBar, EventEmitter);
-
+inherits(ProgressBar, EventEmitter);
 module.exports = ProgressBar;

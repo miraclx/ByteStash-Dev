@@ -1,38 +1,27 @@
-const fs = require('fs'),
-  {ReadChunker, WriteChunker, ReadMerger, WriteMerger} = require('../libs/split-merge'),
-  parseRatio = require('../libs/parse-ratio'),
+let _ = require('lodash'),
+  {ReadChunker, ReadMerger, WriteAttacher} = require('../libs/split-merge'),
   ProgressBar = require('../libs/ProgressBar'),
   readdirSync = require('../libs/path-readdir');
 
-function spec() {
-  // Specify a file[A]
-  // Get an input stream of file[A]
-  // Specify output files[...B]
-  // Create a chunker[C] from library
-  // Create a progressbar stream generator[D]
-  // Tweak chunker options and set output to files[B]
-  // |- Create write streams into files[B] with future content snipped from file[A]
-  // Pipe the file[A] into progressbar [E] generated from [D] and then into chunker[C]
-  // |- Start writing based on configuration to files[B]
-}
-
-function generateBarStream(label, size, slots, append = true) {
+function generateBarStream(label, size, slots) {
   let progressStream = ProgressBar.stream(size, slots, {
-      // length: 100,
       bar: {
         blank: '-',
         filler: '=',
         header: '>',
         color: ['bgRed', 'white'],
-        // color: ['bgWhite', 'red'],
       },
       forceFirst: true,
       template: [
-        '%{label%}: |%{slot:bar%}| %{_percentage%}% %{_eta%}s [%{slot:size%}/%{slot:size:total%}]',
-        '%{_label%}:%{_bar%} %{__percentage%}% %{__eta%}s [%{size%}/%{size:total%}]',
+        '%{attachedMessage%}',
+        '%{_label%}|%{slot:bar%}| %{_percentage%}% %{_eta%}s [%{slot:size%}/%{slot:size:total%}]',
+        '%{__label%}:%{_bar%} %{__percentage%}% %{__eta%}s [%{size%}/%{size:total%}]',
       ],
       _template: {
-        _label: 'Total',
+        _label({label}) {
+          return `${label}:`.padEnd(9, ' ');
+        },
+        __label: 'Total',
         _percentage(feats) {
           return `${feats['slot:percentage']}`.padStart(3, ' ');
         },
@@ -52,43 +41,88 @@ function generateBarStream(label, size, slots, append = true) {
     }),
     {bar} = progressStream;
   bar.label(label);
-
   return progressStream;
 }
 
-function runChunkify() {
-  let chunker = new ReadChunker('./resource/gifted.zip', './test.dir/heap/file%{numberPad%}-%{nParts%}.zip.part', {
-    // length: 100000,
-    size: 10 ** 7,
+function runChunkify(inputFile, outputFiles) {
+  let chunker = new ReadChunker(inputFile, outputFiles, {
+    length: 50,
+    // size: 1 * 10 ** 6,
+    // size: 5 * 2 ** 20,
   });
 
-  console.log(`Input file: ${chunker.prefs.file.path}`);
-
   let slots = chunker.specs.percentage();
-  let progressStream = generateBarStream('Chunker', chunker.prefs.file.stat.size, slots),
+  let progressStream = generateBarStream('Chunker', chunker.specs.totalSize, slots),
     {bar} = progressStream;
-  // process.exit(console.log(bar));
-  let chunkerOutput = new WriteChunker()
-    .attach('barStream', (size, outputFile, persist) => {
-      let barStream = progressStream.next(size),
-        {bar} = barStream;
-      // bar.print(`|${(persist.index = persist.index + 1 || 1)}| Writing to output file ${outputFile}`);
-      return barStream;
-    })
+  let chunkerOutput = new WriteAttacher()
+    .attach('barStream', (size, file, persist) =>
+      progressStream.next(size, {
+        _template: {
+          attachedMessage: `|${(persist.index = persist.index + 1 || 1)}| Writing to output file ${file}`,
+        },
+      })
+    )
     .on('done', () => {})
-    .on('finish', () => {
-      bar.end('All successful\n');
-    })
+    .on('finish', () => bar.end('Chunk successful\n'))
     .on('error', () => bar.end('An error occurred\n'));
 
   chunker.pipe(chunkerOutput);
 }
 
-function runMergify() {
+function runMergify(inputFiles, outputFile) {
   // Let array of info be when writing content so it doesnt clog the RAM for large chunks
-  let merger = new ReadMerger(readdirSync('./test.dir/heap'), './test.dir/complete.txt');
-  // console.log(merger);
+  let merger = new ReadMerger(inputFiles, outputFile);
+  let slots = merger.specs.percentage();
+  let progressStream = generateBarStream('Merger', merger.specs.totalSize, slots),
+    {bar} = progressStream;
+  let mergerOutput = new WriteAttacher()
+    .attach('barStream', (size, file, persist) =>
+      progressStream.next(size, {
+        _template: {
+          attachedMessage: `|${(persist.index = persist.index + 1 || 1)}| Merging from input file ${file}`,
+        },
+      })
+    )
+    .on('done', () => {})
+    .on('finish', () => bar.end('Merge successful\n'))
+    .on('error', err => {
+      if (!bar.isFresh) bar.end('An error occurred\n');
+      else throw Error(err);
+    });
+
+  merger.pipe(mergerOutput);
 }
 
-// runChunkify();
-runMergify();
+let engine = {
+  chunk: [runChunkify, ['./resource/big_file.txt', './test.dir/heap/file%{numberPad%}-%{nParts%}.part']],
+  merge: [
+    (input, output) => {
+      let fs = require('fs'),
+        path = require('path');
+      runMergify(
+        _.flattenDeep(
+          input.split(',').map(file => {
+            const stat = fs.statSync(file);
+            return stat.isDirectory()
+              ? readdirSync(file)
+              : stat.isFile() && file.endsWith('.json')
+                ? require(path.join(process.cwd(), file)).map(_file => path.join(process.cwd(), path.parse(file).dir, _file))
+                : file;
+          })
+        ),
+        output
+      );
+    },
+    ['./test.dir/heap', './test.dir/merged.result'],
+  ],
+};
+
+function main(method) {
+  let input = process.argv.slice(2);
+  if (input[0] in engine) [method, input] = [input[0], input.slice(1)];
+  input = Object.assign([], engine[method][1], input);
+  console.log(method, JSON.stringify(input));
+  engine[method][0].call(null, ...input);
+}
+
+main('merge');

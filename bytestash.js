@@ -25,19 +25,18 @@ commander
   .command('encrypt <file...>')
   .alias('e')
   .option('-e, --encrypt-by <method>', 'Method to perform encryption [chunk|archive]', 'archive')
-  .option('-h, --hash [key]', 'Use a hash for each chunk encryption ::Specifyable (Only compatible with `-e chunks`)', false)
-  .option('-o, --output <archive path>', 'specify the path of the output archive', '<filename>')
+  .option('-o, --out <archive path>', 'specify the path of the output archive', '<filename>')
   .option('-p, --password <password>', 'collect the password from the args (Not recommended)', '<query>')
-  .option('-r, --random-hash', 'use random hashes for each chunk (Only compatible with `-e chunks`)', false)
+  .option('-r, --random-hash', 'Use random hashes for each chunk encryption (Only compatible with `-e chunks`)')
   .option('-x, --export [file]', 'export the keys and un-encrypted structuring to the file (Not recommended)')
   .option('--no-xbit', 'do not force the *.xbit extension on the archive')
   .on('--help', showExamples.bind(null, 'encrypt'))
   .action(runEncryptFromCli);
 
 commander
-  .command('decrypt <file...>')
+  .command('decrypt <file>')
   .alias('d')
-  .option('-o, --output <path>', 'specifify the path for the decrypted archive', '<filename>')
+  .option('-o, --out <path>', 'specifify the path for the decrypted archive', '<filename>')
   .option('-p, --password <password>', 'collect the password from the args (Not recommended)', '<query>')
   .on('--help', showExamples.bind(null, 'decrypt'))
   .action(runDecryptFromCli);
@@ -100,9 +99,7 @@ function runEncryptFromCli(files, args) {
   stasher.log('Encryption Details');
   stasher.log('------------------');
   stasher.log('Action', 'Encryption');
-  console.log(args);
-  process.exit();
-  stasher.log('Input File', args.file);
+  stasher.log('Input File', files);
   getLogMethod(stasher);
   var encryptBy;
   if (args.encryptBy) {
@@ -111,10 +108,9 @@ function runEncryptFromCli(files, args) {
     else throw Error(`Encryption method is invalid: ${args.encryptBy}`);
     stasher.log('Encrypting Method', encryptBy);
   }
-  stasher.log('Output File', args.output);
+  stasher.log('Output File', args.out);
   stasher.log('Password', args.password);
-  stasher.log('Hash', `${args.hash}`);
-  if (encryptBy === 'chunks' && args.hash) stasher.log('Random hash', `${args.randomHash}`);
+  stasher.log('Randomly Hash', `${args.randomHash}`);
   stasher.log('Export', `${!!args.export}`);
   if (args.export) stasher.log('Export file', (args.export === true && 'exported.zip') || args.export);
   stasher.log('Colorize', `${args.parent.color}`);
@@ -129,14 +125,14 @@ function runDecryptFromCli(files, args) {
   stasher.log('Decryption Details');
   stasher.log('------------------');
   stasher.log('Action', 'Decryption');
-  stasher.log('Input File', args.file);
+  stasher.log('Input File', files);
   getLogMethod(stasher);
-  stasher.log('Output File', args.output);
+  stasher.log('Output File', args.out);
   stasher.log('Password', args.password);
   stasher.log('Colorize', args.parent.color);
   stasher.log('');
   console.log(stasher.print());
 }
 
-process.argv.slice(2).length && console.log(bytestash.tagHeader());
+// process.argv.slice(2).length && console.log(bytestash.tagHeader());
 commander.on('--help', showExamples).parse(process.argv);
