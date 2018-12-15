@@ -1,6 +1,6 @@
-let readline = require('readline-sync');
-let randomiZe = require('../libs/mosr');
-let ProgressBar = require('../libs/ProgressBar');
+let readline = require('readline-sync'),
+  randomiZe = require('../libs/mosr'),
+  ProgressBar = require('../libs/ProgressBar');
 
 function ranger(args = '') {
   let input = args.trim(),
@@ -38,7 +38,7 @@ var engine = {
 
     function checkFile(file) {
       if (!readline.keyInYN('Are you sure to overwrite file with scrambled data?')) {
-        return readline.questionPath('Please enter output file: ', {exists: false});
+        return readline.questionPath('Please enter output file: ', { exists: false });
       }
       return file;
     }
@@ -47,7 +47,7 @@ var engine = {
 
     let progressStream = ProgressBar.stream(fs.statSync(file).size, 100);
 
-    fs.createReadStream(file, {highWaterMark: 50})
+    fs.createReadStream(file, { highWaterMark: 50 })
       .pipe(randomiZe.stream)
       .pipe(progressStream.next())
       .pipe(fs.createWriteStream(outputFile));
@@ -70,3 +70,11 @@ function main() {
 }
 
 main();
+
+/**
+ * node scramble.js <method> <input> <?:output>
+ * =========================================
+ * node scramble.js range 1..=10                          // Create an array, [1,2,...,9,10] and scramble output
+ * node scramble.js scramble "Hello There"                // Scramble the string input
+ * node scramble.js scrambleFile ./file ./file.scrambled  // Scramble the input file into the output file
+ */

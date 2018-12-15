@@ -1,8 +1,15 @@
-let {format, inherits} = require('util'),
+/**
+ * @copyright (c) 2017 Miraculous Owonubi
+ * @author Miraculous Owonubi
+ * @license Apache-2.0
+ * @module bar-progress
+ */
+
+let { format, inherits } = require('util'),
   chalk = require('chalk'),
   EventEmitter = require('events'),
   progressStream = require('progress-stream'),
-  {merge} = require('lodash'),
+  { merge } = require('lodash'),
   parseRatio = require('./parse-ratio'),
   parseBytes = require('./parse-bytes'),
   parseTemplate = require('./parse-template');
@@ -61,7 +68,7 @@ var flipper = (function() {
  */
 function getBar(filled, empty, opts) {
   var barOpts = merge({}, _defaultOptions.bar, opts.bar);
-  var {filler, blank} = barOpts,
+  var { filler, blank } = barOpts,
     color = merge([], barOpts.color, opts.bar.color);
   [filled, empty] = [filled, empty].map(v => Math.floor(v));
   [filler, blank] = [filler, blank].map(content => (Array.isArray(content) || typeof content === 'string' ? content : ''));
@@ -76,7 +83,7 @@ function parseBar(bar, fillable, value) {
   return bar.styler(filled, empty, bar.opts);
 }
 
-class ProgressBar {
+module.exports = class ProgressBar {
   /**
    * Build a progress bar
    * @param {Number} total Total attainable value of bytes in <N>
@@ -86,12 +93,9 @@ class ProgressBar {
   constructor(total = 100, arr = [100], opts) {
     this.total = total;
     this.opts = merge({}, _defaultOptions, opts);
-    this.cores = {label: 'Loading', append: []};
-    this.slots = parseRatio(arr, 100, 2)
-      .filter(v => v != 0)
-      .map(level => ({level, value: 0}));
+    this.cores = { label: 'Loading', append: [] };
+    this.slots = parseRatio(arr, 100, 15, false).map(level => ({ level, value: 0 }));
     this.styler = getBar;
-    // EventEmitter.call(this);
   }
   /**
    * Label the progressbar while returning itself
@@ -137,7 +141,7 @@ class ProgressBar {
           : Array.isArray(levels)
             ? levels
             : bar.slots.map(v => v.value);
-      var invalids = levels.reduce((obj, value, index) => ((value < 0 || value > 100) && obj.push({value, index}), obj), []);
+      var invalids = levels.reduce((obj, value, index) => ((value < 0 || value > 100) && obj.push({ value, index }), obj), []);
       if (invalids.length) {
         throw Error(
           `Percentage value in <levels>[${invalids.map(v => v.index).join()}]:[${invalids
@@ -158,7 +162,7 @@ class ProgressBar {
     var value = (percentage / 100) * this.total;
     if (fixedPoint || fixedPoint == 0)
       [percentage, value] = [percentage, value].map(value => parseFloat(value.toFixed(fixedPoint)));
-    return {percentage, value, remaining: this.total - value};
+    return { percentage, value, remaining: this.total - value };
   }
   /**
    * Draw the progressbar, apply template options to the template
@@ -181,7 +185,7 @@ class ProgressBar {
    */
   constructBar(template) {
     let bars = !this.opts.forceFirst
-        ? this.slots.map(({level, value}) =>
+        ? this.slots.map(({ level, value }) =>
             parseBar(
               this,
               Math.round((level / 100) * (typeof this.opts.length == 'function' ? this.opts.length() : this.opts.length)),
@@ -195,11 +199,9 @@ class ProgressBar {
               this.average().percentage
             ),
           ],
-      _template = Array.isArray(this.opts.template) ? this.opts.template.join('\n') : this.opts.template;
-    template = merge(
-      {},
-      this.opts._template,
-      {
+      templateString = Array.isArray(this.opts.template) ? this.opts.template.join('\n') : this.opts.template;
+    let variable = {
+      ...{
         bar: bars.join(this.opts.bar.separator || ''),
         flipper: flipper(++flipper.count, this.opts.flipper),
         label: this.label(),
@@ -210,9 +212,14 @@ class ProgressBar {
         completed: this.average(2).value,
         total: this.total,
       },
-      template
-    );
-    return parseTemplate(_template, template);
+      ...template,
+    };
+    template = { ...this.opts._template, ...variable };
+    for (let spec in this.opts._template) {
+      if (this.opts._template[spec] !== template[spec] && typeof this.opts._template[spec] == 'function')
+        template[spec] = this.opts._template[spec](variable);
+    }
+    return parseTemplate(templateString, template);
   }
   /**
    * Print a message after a bar `draw` interrupt
@@ -221,6 +228,7 @@ class ProgressBar {
    */
   print(type, ...content) {
     type = format(type);
+    if (!process.stdout.isTTY) throw Error("Can't draw or print progressBar interrupts in piped mode");
     // If bar has ended throw error
     function cleanWrite(arr, justLogged, addons = 0) {
       if (!justLogged) {
@@ -247,9 +255,11 @@ class ProgressBar {
    * @param {String} message The content to be written to `stdout` after to ending the bar
    */
   end(...message) {
-    if (this.justLogged) this.draw(this.oldBar);
-    if (message.length) this.print('end', ...message);
-    this.isEnded = true;
+    if (!this.isEnded) {
+      if (this.justLogged) this.draw(this.oldBar);
+      if (message.length) this.print('end', ...message);
+      this.isEnded = true;
+    }
     return this;
   }
   /**
@@ -279,7 +289,7 @@ class ProgressBar {
    */
   append(bar, inherit = false) {
     if (!ProgressBar.isBar(bar) && !bar.opts.template) throw Error('The Parameter <bar> is not a progressbar or a hanger');
-    this.cores.append.push({bar, inherit});
+    this.cores.append.push({ bar, inherit });
     bar.cores.isKid = true;
     return this;
   }
@@ -304,6 +314,14 @@ class ProgressBar {
     return this.isActive && !this.average().value;
   }
   /**
+   * Calculate slot levels by size
+   * @param {number} size Maximum possible total size
+   * @param {number[]} slots Each slot length, inferrable if ratio doesn't make 100 or pop-able if over 100
+   */
+  static slotsBySize(size, slots) {
+    return slots.map(_size => (_size / size) * 100);
+  }
+  /**
    * Create a streamified bar for use with generators
    * @param {Number} total Total attainable value of bytes in <N>
    * @param {Number|Number[]} slots Number of slots in <%>
@@ -324,56 +342,55 @@ class ProgressBar {
   static streamify(bar, actor, opts) {
     bar.opts = merge({}, _streamOpts, bar.opts, opts);
     if (bar.opts.template === _defaultOptions.template) bar.opts.template = merge({}, _streamOpts, opts).template;
-    var streamGenerator = this.rawStreamify(bar, (bar, slotLevel, total = bar.total) => {
+
+    let result = new EventEmitter();
+
+    let streamGenerator = this.rawStreamify(bar, (bar, slotLevel, total = bar.total) => {
       if (!ProgressBar.isBar(bar)) throw Error('The Parameter is not a progressBar');
-      var through = progressStream(merge({time: 100, length: total}, bar.opts.progress));
-      ((through.bar = bar), through)
-        .on('progress', progress => {
-          if (bar.isEnded) return;
-          through.emit('tick', bar);
-          var _template = {
-            'slot:bar': parseBar(
-              bar,
-              typeof bar.opts.length == 'function' ? bar.opts.length() : bar.opts.length,
-              progress.percentage
-            ),
-            'slot:size': parseBytes(progress.transferred, 2, {shorten: true}),
-            'slot:size:total': parseBytes(progress.length, 2, {shorten: true}),
-            'slot:percentage': progress.percentage.toFixed(0),
-            'slot:eta': progress.eta,
-          };
-          var level = bar.slots.map((...[, index]) => ++index === slotLevel && Math.floor(progress.percentage));
-          // Total slottage
-          (
-            actor ||
-            ((bar, level, _template) =>
-              bar.progress(level).draw(
-                merge(_template, {
-                  'size:total': parseBytes(bar.total, 2, {shorten: true}),
-                  size: parseBytes(bar.average().value, 2, {shorten: true}),
-                  percentage: bar.average(0).percentage,
-                  eta: Math.round(bar.average().remaining / progress.speed),
-                })
-              ))
-          ).call(null, bar, level, _template);
-        })
-        .once('error', () => bar.end())
-        .once('finish', () => through.emit('complete', bar));
+      var through = progressStream(merge({ time: 100, length: total }, bar.opts.progress), progress => {
+        // bar.print(progress);
+
+        if (bar.isEnded) return;
+        through.emit('tick', bar);
+        var _template = {
+          'slot:bar': parseBar(
+            bar,
+            typeof bar.opts.length == 'function' ? bar.opts.length() : bar.opts.length,
+            progress.percentage
+          ),
+          'slot:size': parseBytes(progress.transferred, 2, { shorten: true }),
+          'slot:size:total': parseBytes(progress.length, 2, { shorten: true }),
+          'slot:percentage': progress.percentage.toFixed(0),
+          'slot:eta': progress.eta,
+        };
+        var level = bar.slots.map((...[, index]) => ++index === slotLevel && Math.floor(progress.percentage));
+        (actor || ((bar, level, template) => bar.progress(level).draw(template()))).call(null, bar, level, () =>
+          merge(_template, {
+            'size:total': parseBytes(bar.total, 2, { shorten: true }),
+            size: parseBytes(bar.average().value, 2, { shorten: true }),
+            percentage: bar.average(0).percentage,
+            eta: Math.round(bar.average().remaining / progress.speed),
+          })
+        );
+        if (bar.isComplete()) result.emit('complete', bar);
+      }).once('error', () => bar.end());
+      through.bar = bar;
       return through;
     });
-    return {
+    return Object.assign(result, {
       /**
        * Get the next PassThrough instance
-       * @param {total: Number, opts: {}} opts The options to be used
+       * @param {number} size Size for the next chunk
+       * @param {{}} opts Bar options
        * @returns {NodeJS.WritableStream} Returned function from `ProgressBar.streamify`
        */
-      next: (...opts) => streamGenerator.next(opts).value,
+      next: (size, opts) => streamGenerator.next([size, opts]).value,
       /**
        * The ProgressBar Instance
        * @type {ProgressBar} The ProgresBar
        */
       bar: streamGenerator.next().value,
-    };
+    });
   }
   /**
    * Prepare a raw generator for use
@@ -394,6 +411,4 @@ class ProgressBar {
   static isBar(bar) {
     return bar instanceof this;
   }
-}
-inherits(ProgressBar, EventEmitter);
-module.exports = ProgressBar;
+};

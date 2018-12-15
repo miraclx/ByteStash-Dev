@@ -26,10 +26,10 @@
     "no-unused-vars": [
       1,
       {
-        "argsIgnorePattern": "res|next|^err"
+        "argsIgnorePattern": "res|next|^err|^_"
       }
     ],
-    "no-template-curly-in-string": "error",
+    "no-template-curly-in-string": 2,
     "arrow-body-style": [
       2,
       "as-needed"
@@ -41,8 +41,8 @@
       }
     ],
     "no-console": 0,
-    "import/prefer-default-export": 0,
     "import": 0,
+    "import/prefer-default-export": 0,
     "func-names": 0,
     "space-before-function-paren": 0,
     "comma-dangle": 0,
@@ -60,7 +60,7 @@
         "trailingComma": "es5",
         "singleQuote": true,
         "printWidth": 130,
-        "bracketSpacing": false
+        "bracketSpacing": true
       }
     ]
   }

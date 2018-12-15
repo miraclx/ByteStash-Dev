@@ -22,7 +22,7 @@ function startExec(progressBar, colors = colorsObj) {
         forceFirst: false,
         template: `${chalk.underline('%{label%}')}%{_bar%} [%{percentage%}%]`,
         _template: {
-          _bar({bar}) {
+          _bar({ bar }) {
             return bar ? ` [${bar}]` : '';
           },
         },
@@ -34,7 +34,7 @@ function startExec(progressBar, colors = colorsObj) {
         colors.fg[Math.floor(Math.random() * (colors.fg.length - 1))],
       ],
     });
-    let random = progressBar.slots.map(({value}) => (value < 100 ? Math.random() * 10 : 0));
+    let random = progressBar.slots.map(({ value }) => (value < 100 ? Math.random() * 10 : 0));
     if (progressBar.isComplete()) {
       progressBar.end('Completed!\n');
       return clearInterval(timer);
@@ -45,3 +45,7 @@ function startExec(progressBar, colors = colorsObj) {
 }
 
 startExec();
+
+/**
+ * > node colorize.js  // Spawn a colorized progressbar
+ */

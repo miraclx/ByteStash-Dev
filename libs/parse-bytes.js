@@ -1,4 +1,11 @@
 /**
+ * @copyright (c) 2017 Miraculous Owonubi
+ * @author Miraculous Owonubi
+ * @license Apache-2.0
+ * @module parse-bytes
+ */
+
+/**
  * Make bytes human readable
  * @param {ByteString} bytes Number of bytes to be parsed
  * @param {Number} fixedPoint Number of decimal points
@@ -7,7 +14,7 @@
 module.exports = function parseBytes(
   bytes = 0,
   fixedPoint = 2,
-  {bi = false, shorten = true, bits = false, addSpace = false} = {}
+  { bi = false, shorten = true, bits = false, addSpace = false } = {}
 ) {
   let sizes = !bi
     ? ['-', 'Kilo-', 'Mega-', 'Giga-', 'Tera-', 'Peta-', 'Exa-', 'Zetta-', 'Yotta-']

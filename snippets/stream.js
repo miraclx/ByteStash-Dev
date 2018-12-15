@@ -1,7 +1,8 @@
-let {createReadStream, statSync, createWriteStream} = require('fs'),
+let { createReadStream, statSync, createWriteStream } = require('fs'),
   Promise = require('bluebird'),
   ProgressBar = require('../libs/ProgressBar'),
   parseBytes = require('../libs/parse-bytes'),
+  parseTemplate = require('../libs/parse-template'),
   totalSize = require('../libs/total-size');
 
 function runExample(files, showLog = true) {
@@ -64,7 +65,7 @@ function runExample(files, showLog = true) {
               reader
                 .pipe(
                   progressBars
-                    .next(statSync(reader.path).size, {_template: {in: block.in, out: result}})
+                    .next(statSync(reader.path).size, { _template: { in: block.in, out: result } })
                     .on('complete', () => resolve(result))
                     .on('error', reject)
                 )
@@ -79,9 +80,20 @@ function runExample(files, showLog = true) {
     .catch(error => progressBars.bar.end('An error occurred\n'));
 }
 
-runExample([
-  {
-    in: './resource/big_file.txt',
-    out: [...Array(2)].map((...[, i]) => `./test.dir/chunks/season-part-${i}`),
-  },
-]);
+function main(args) {
+  let [iFile, oFile = `./_testing_/clone-%{count%}`, nClones = 2] = args.map(v => (parseInt(v) ? parseInt(v) : v));
+  runExample([
+    {
+      in: iFile,
+      out: [...Array(nClones)].map((...[, count]) => parseTemplate(oFile, { count })),
+    },
+  ]);
+}
+
+main(process.argv.slice(2));
+
+/**
+ * > node stream.js <input file> <output file> <clone count>
+ * =========================================================
+ * > node stream.js ./file ./file%{count%} 2        // Copy the input file into <2> output files
+ */

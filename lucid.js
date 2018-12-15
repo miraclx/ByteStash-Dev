@@ -4,8 +4,8 @@ let fs = require('fs');
 let bytestash = {
   version: '1.1.0',
   algorithm: 'aes-256-cbc',
-  salt(key, namespace) {
-    return `bytestash@${namespace}:${key}`;
+  salt(user, namespace) {
+    return `bytestash@${user}:${namespace}`;
   },
 };
 
@@ -26,7 +26,7 @@ function encryptFile(inputPath, outputPath = `${inputPath}.xbit`, key) {
 
   var keyBuf = Buffer.from(key);
 
-  var inputStream = fs.createReadStream(inputPath);
+  var inputStream = fs.createReadStream(inputPath, { highWaterMark: 2 ** 30 });
   var outputStream = fs.createWriteStream(outputPath);
   var cipher = crypto.Cipher(bytestash.algorithm, keyBuf);
 
@@ -39,7 +39,7 @@ function decryptFile(inputPath, outputPath, key) {
 
   var keyBuf = Buffer.from(key);
 
-  var inputStream = fs.createReadStream(inputPath);
+  var inputStream = fs.createReadStream(inputPath, { highWaterMark: 100 * 2 ** 20 });
   var outputStream = fs.createWriteStream(outputPath);
   var cipher = crypto.Decipher(bytestash.algorithm, keyBuf);
 
@@ -52,9 +52,9 @@ function performAction(action, key) {
   console.log(action, key.toString('hex'), key.toString('hex').length);
   // process.exit();
   if (action == 'encrypt')
-    encryptFile({inputPath: './Mr.RobotS01E01.zip', outputPath: './lucid_results/Mr.RobotS01E01.xbit', key});
+    encryptFile({ inputPath: './Mr.RobotS01E01.zip', outputPath: './lucid_results/Mr.RobotS01E01.xbit', key });
   else if (action == 'decrypt')
-    decryptFile({inputPath: './lucid_results/Mr.RobotS01E01.xbit', outputPath: './lucid_results/Mr.RobotS01E01.zip', key});
+    decryptFile({ inputPath: './lucid_results/Mr.RobotS01E01.xbit', outputPath: './lucid_results/Mr.RobotS01E01.zip', key });
   else throw new Error('action should be of value <encrypt> or <decrypt>');
 }
 

@@ -1,5 +1,5 @@
 let _ = require('lodash'),
-  {ReadChunker, ReadMerger, WriteAttacher} = require('../libs/split-merge'),
+  { ReadChunker, ReadMerger, WriteAttacher } = require('../libs/split-merge'),
   ProgressBar = require('../libs/ProgressBar'),
   readdirSync = require('../libs/path-readdir');
 
@@ -11,41 +11,40 @@ function generateBarStream(label, size, slots) {
         header: '>',
         color: ['bgRed', 'white'],
       },
-      forceFirst: true,
       template: [
         '%{attachedMessage%}',
-        '%{_label%}|%{slot:bar%}| %{_percentage%}% %{_eta%}s [%{slot:size%}/%{slot:size:total%}]',
-        '%{__label%}:%{_bar%} %{__percentage%}% %{__eta%}s [%{size%}/%{size:total%}]',
+        '%{label%}|%{slot:bar%}| %{percentage%}% %{eta%}s [%{slot:size%}/%{slot:size:total%}]',
+        'Total:%{bar%} %{_percentage%}% %{_eta%}s [%{size%}/%{size:total%}]',
       ],
+      forceFirst: true,
       _template: {
-        _label({label}) {
-          return `${label}:`.padEnd(9, ' ');
+        bar({ bar }) {
+          return `${bar ? `   [${bar}]` : ''}`;
         },
-        __label: 'Total',
-        _percentage(feats) {
-          return `${feats['slot:percentage']}`.padStart(3, ' ');
-        },
-        __percentage({percentage}) {
-          return `${percentage}`.padStart(3, ' ');
+        eta({ eta }) {
+          return `${eta}`.padStart(3, ' ');
         },
         _eta(feats) {
           return `${feats['slot:eta']}`.padStart(3, ' ');
         },
-        __eta({eta}) {
-          return `${eta}`.padStart(3, ' ');
+        label({ label }) {
+          return `${label}:`.padEnd(9, ' ');
         },
-        _bar({bar}) {
-          return `${bar ? `   [${bar}]` : ''}`;
+        percentage({ percentage }) {
+          return `${percentage}`.padStart(3, ' ');
+        },
+        _percentage(feats) {
+          return `${feats['slot:percentage']}`.padStart(3, ' ');
         },
       },
     }),
-    {bar} = progressStream;
+    { bar } = progressStream;
   bar.label(label);
   return progressStream;
 }
 
 function runChunkify(inputFile, outputFiles) {
-  let chunker = new ReadChunker(inputFile, outputFiles, {
+  let chunker = new ReadChunker({
     length: 50,
     // size: 1 * 10 ** 6,
     // size: 5 * 2 ** 20,
@@ -53,9 +52,9 @@ function runChunkify(inputFile, outputFiles) {
 
   let slots = chunker.specs.percentage();
   let progressStream = generateBarStream('Chunker', chunker.specs.totalSize, slots),
-    {bar} = progressStream;
+    { bar } = progressStream;
   let chunkerOutput = new WriteAttacher()
-    .attach('barStream', (size, file, persist) =>
+    .use('barStream', (size, file, persist) =>
       progressStream.next(size, {
         _template: {
           attachedMessage: `|${(persist.index = persist.index + 1 || 1)}| Writing to output file ${file}`,
@@ -74,9 +73,9 @@ function runMergify(inputFiles, outputFile) {
   let merger = new ReadMerger(inputFiles, outputFile);
   let slots = merger.specs.percentage();
   let progressStream = generateBarStream('Merger', merger.specs.totalSize, slots),
-    {bar} = progressStream;
+    { bar } = progressStream;
   let mergerOutput = new WriteAttacher()
-    .attach('barStream', (size, file, persist) =>
+    .use('barStream', (size, file, persist) =>
       progressStream.next(size, {
         _template: {
           attachedMessage: `|${(persist.index = persist.index + 1 || 1)}| Merging from input file ${file}`,
@@ -125,4 +124,12 @@ function main(method) {
   engine[method][0].call(null, ...input);
 }
 
-main('merge');
+main('chunk');
+
+// chunker.pipe(chunkerOutput);
+// fs.createReadStream(file).pipe(chunker).pipe(chunkerOutput);
+// archiver.pipe(crypto).pipe(chunker).pipe(chunkerOutput.use('encrypt', (file, size, persist) => {}));
+
+/**
+ *
+ */

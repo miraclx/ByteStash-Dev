@@ -1,48 +1,47 @@
 #!/bin/env node
 let commander = require('commander');
 
-let bytestash = {
-  version: '1.0.0',
-  author: {
-    name: 'Miraculous Owonubi',
-    email: 'omiraculous@gmail.com',
-  },
-  year: 2018,
-  tagHeader() {
-    return `ByteStash v${this.version} (c) ${this.year} ${this.author.name} <${this.author.email}>`;
-  },
-};
+function attachMain(commander, bytestash) {
+  commander
+    .version(`ByteStash v${bytestash.version}`)
+    // .description(bytestash.tagHeader())
+    .usage('[commands] [options]')
+    .option('-l, --log [file]', 'log the output to file', 'compile.log')
+    .option(
+      '-v, --verbose',
+      'be Verbose Incremental (-vv will include hashes (Not recommended))',
+      (...[, v]) => v <= 2 && v + 1,
+      0
+    )
+    .option('--no-color', 'Do not output with any colors', false);
+}
 
-commander
-  .version(`ByteStash v${bytestash.version}`)
-  // .description(bytestash.tagHeader())
-  .usage('[commands] [options]')
-  .option('-l, --log [file]', 'log the output to file', 'compile.log')
-  .option('-v, --verbose', 'be Verbose Incremental (-vv will include hashes (Not recommended))', (...[, v]) => v <= 2 && v + 1, 0)
-  .option('--no-color', 'Do not output with any colors', false);
+function attachEncrypt(commander, fn) {
+  commander
+    .command('encrypt <file...>')
+    .alias('e')
+    .option('-e, --encrypt-by <method>', 'Method to perform encryption [chunk|archive]', 'archive')
+    .option('-o, --out <archive path>', 'specify the path of the output archive', '<filename>')
+    .option('-p, --password <password>', 'collect the password from the args (Not recommended)', '<query>')
+    .option('-r, --random-hash', 'Use random hashes for each chunk encryption (Only compatible with `-e chunks`)')
+    .option('-x, --export [file]', 'export the keys and un-encrypted structuring to the file (Not recommended)')
+    .option('--no-xbit', 'do not force the *.xbit extension on the archive')
+    .on('--help', showExamples.bind(null, 'encrypt'))
+    .action(fn);
+}
 
-commander
-  .command('encrypt <file...>')
-  .alias('e')
-  .option('-e, --encrypt-by <method>', 'Method to perform encryption [chunk|archive]', 'archive')
-  .option('-o, --out <archive path>', 'specify the path of the output archive', '<filename>')
-  .option('-p, --password <password>', 'collect the password from the args (Not recommended)', '<query>')
-  .option('-r, --random-hash', 'Use random hashes for each chunk encryption (Only compatible with `-e chunks`)')
-  .option('-x, --export [file]', 'export the keys and un-encrypted structuring to the file (Not recommended)')
-  .option('--no-xbit', 'do not force the *.xbit extension on the archive')
-  .on('--help', showExamples.bind(null, 'encrypt'))
-  .action(runEncryptFromCli);
-
-commander
-  .command('decrypt <file>')
-  .alias('d')
-  .option('-o, --out <path>', 'specifify the path for the decrypted archive', '<filename>')
-  .option('-p, --password <password>', 'collect the password from the args (Not recommended)', '<query>')
-  .on('--help', showExamples.bind(null, 'decrypt'))
-  .action(runDecryptFromCli);
+function attachDecrypt(commander, fn) {
+  commander
+    .command('decrypt <file>')
+    .alias('d')
+    .option('-o, --out <path>', 'specifify the path for the decrypted archive', '<filename>')
+    .option('-p, --password <password>', 'collect the password from the args (Not recommended)', '<query>')
+    .on('--help', showExamples.bind(null, 'decrypt'))
+    .action(fn);
+}
 
 function showExamples(type) {
-  var msgs = {
+  let msgs = {
     encrypt: `
     $ bytestash encrypt confidential
       # Encrypt the \`confidential\` folder to \`confidential.xbit\` file
@@ -83,34 +82,34 @@ class StashLog {
   }
 }
 
-function getLogMethod(stasher) {
-  if (commander.log) {
-    stasher.log('Log File', commander.log);
+function getLogMethod(stasher, context) {
+  if (context.log) {
+    stasher.log('Log File', context.log);
     stasher.log(
       'Log Method',
-      (!commander.verbose && 'Normal') || (commander.verbose == 1 && 'Verbose') || (commander.verbose == 2 && 'ExtraVerbose')
+      (!context.verbose && 'Normal') || (context.verbose == 1 && 'Verbose') || (context.verbose == 2 && 'ExtraVerbose')
     );
   }
 }
 
 function runEncryptFromCli(files, args) {
-  var stasher = new StashLog();
+  let stasher = new StashLog();
   stasher.log('');
   stasher.log('Encryption Details');
   stasher.log('------------------');
   stasher.log('Action', 'Encryption');
   stasher.log('Input File', files);
-  getLogMethod(stasher);
-  var encryptBy;
+  stasher.log('Output File', args.out);
+  stasher.log('Password', args.password);
+  stasher.log('Randomly Hash', `${!!args.randomHash}`);
+  getLogMethod(stasher, args.parent);
+  let encryptBy;
   if (args.encryptBy) {
     if (['chunk', 'chunks'].includes(args.encryptBy.toLowerCase())) encryptBy = 'chunks';
     else if (args.encryptBy.toLowerCase() == 'archive') encryptBy = 'archive';
     else throw Error(`Encryption method is invalid: ${args.encryptBy}`);
     stasher.log('Encrypting Method', encryptBy);
   }
-  stasher.log('Output File', args.out);
-  stasher.log('Password', args.password);
-  stasher.log('Randomly Hash', `${args.randomHash}`);
   stasher.log('Export', `${!!args.export}`);
   if (args.export) stasher.log('Export file', (args.export === true && 'exported.zip') || args.export);
   stasher.log('Colorize', `${args.parent.color}`);
@@ -120,19 +119,24 @@ function runEncryptFromCli(files, args) {
 }
 
 function runDecryptFromCli(files, args) {
-  var stasher = new StashLog();
+  let stasher = new StashLog();
   stasher.log('');
   stasher.log('Decryption Details');
   stasher.log('------------------');
   stasher.log('Action', 'Decryption');
   stasher.log('Input File', files);
-  getLogMethod(stasher);
   stasher.log('Output File', args.out);
+  getLogMethod(stasher, args.parent);
   stasher.log('Password', args.password);
   stasher.log('Colorize', args.parent.color);
   stasher.log('');
   console.log(stasher.print());
 }
 
-// process.argv.slice(2).length && console.log(bytestash.tagHeader());
-commander.on('--help', showExamples).parse(process.argv);
+module.exports = function(bytestash, encryptionHandle = runEncryptFromCli, decryptionHandle = runDecryptFromCli) {
+  attachMain(commander, bytestash);
+  attachEncrypt(commander, encryptionHandle);
+  attachDecrypt(commander, decryptionHandle);
+  commander.on('--help', showExamples);
+  commander.parse(bytestash.argv);
+};

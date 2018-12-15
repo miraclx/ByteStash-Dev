@@ -1,9 +1,10 @@
-let {encrypt, encryptFile, decrypt, decryptFile, hashKey} = require('../lucid');
+let { encrypt, encryptFile, decrypt, decryptFile, hashKey } = require('../lucid');
 
 function exec(fn, passOn, keyIndex, totalLength, namespace, ...args) {
   if (!args.every(v => v !== undefined)) throw new Error('Please complete the argument list');
-  let [inEncoding, outEncoding] = args.splice(totalLength, Infinity)[0].split(/[-:,]/);
+  let [inEncoding, outEncoding] = args.splice(totalLength, 1)[0].split(/[-:,]/);
   args[0] = Buffer.from(args[0], inEncoding || 'ascii');
+  namespace = args[totalLength] ? args[totalLength] : namespace;
   args[keyIndex] = hashKey(args[keyIndex], namespace).toString('hex');
   let result = fn(...args).toString(outEncoding || 'ascii');
   if (passOn) return result;
@@ -31,3 +32,12 @@ function main(method) {
 }
 
 main('encrypt');
+
+/**
+ * > node do-crypt.js <action> <input> <password> <encoding> <?:namespace>
+ * ==============================================================================
+ * > node do-crypt.js encrypt "Hello World" "#GR33&ING" :hex
+ * > node do-crypt.js decrypt "17bd22e70923400a488deedb75fad35b" "#GR33&ING" hex:
+ * > node do-crypt.js encryptFile ./file ./file.encoded "#PA$$W0RD"
+ * > node do-crypt.js decryptFile ./file.encoded ./file.decoded "#PA$$W0RD"
+ */

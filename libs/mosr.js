@@ -1,3 +1,10 @@
+/**
+ * @copyright (c) 2017 Miraculous Owonubi
+ * @author Miraculous Owonubi
+ * @license Apache-2.0
+ * @module mosr
+ */
+
 let through = require('through2');
 
 /**
@@ -33,5 +40,6 @@ function randomiZe(rawArr) {
 module.exports = randomiZe;
 
 randomiZe.stream = through(function(chunk, encoding, callback) {
-  callback(null, randomiZe(chunk));
+  this.push(randomiZe(chunk));
+  callback();
 });

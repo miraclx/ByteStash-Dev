@@ -1,4 +1,11 @@
 /**
+ * @copyright (c) 2017 Miraculous Owonubi
+ * @author Miraculous Owonubi
+ * @license Apache-2.0
+ * @module parse-template
+ */
+
+/**
  * Parse a template, replace parts with specified values
  * @param {String} template Template to be parsed
  * @param {*} features Object containing the object parts with replaceable values
