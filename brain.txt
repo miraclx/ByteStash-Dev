@@ -61,3 +61,7 @@ Merge these chunk bytes
 Mount the Fabric FS from the resulting tarball
 
 => DECRYPT
+
+each chunk, random IV
+5 chunks, 1 random salt
+50 Chunks, 1 Encrypted Stash

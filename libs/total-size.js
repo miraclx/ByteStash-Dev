@@ -11,38 +11,34 @@
  * => "size of public/js is: 12,432
  */
 
-var fs = require('fs'),
-  _ = require('lodash'); // requires underscore for _.flatten()
-
-function format(n) {
-  return n.toString().replace(/(\d)(?=(\d{3})+$)/g, '$1,');
-}
+var { statSync, readdirSync } = require('fs'),
+  { flattenDeep } = require('lodash'); // requires lodash for flattenDeep()
 
 function getFolderContentSizes(dir) {
   dir = dir.replace(/\/$/, '');
-  return _.flatten(
-    fs.readdirSync(dir).map(function(file) {
-      var fileOrDir = fs.statSync([dir, file].join('/'));
-      if (fileOrDir.isFile()) {
-        return fileOrDir.size;
-      } else if (fileOrDir.isDirectory()) {
-        return getFolderSize([dir, file].join('/'));
-      }
-    })
-  );
+  return readdirSync(dir).map(function(file) {
+    var fileOrDir = statSync([dir, file].join('/'));
+    if (fileOrDir.isFile()) {
+      return fileOrDir.size;
+    } else if (fileOrDir.isDirectory()) {
+      return getFolderContentSizes([dir, file].join('/'));
+    }
+  });
 }
 
 function getFolderSize(dir) {
-  return getFolderContentSizes(dir).reduce((a, b) => a + b, 0);
+  return flattenDeep(getFolderContentSizes(dir)).reduce((a, b) => a + b, 0);
 }
 
 function getFileSize(file) {
-  return fs.statSync(file).size;
+  return statSync(file).size;
 }
 
 module.exports = function sizeOf(content) {
   var single = false;
   if (!Array.isArray(content)) [single, content] = [true, [content]];
-  var result = content.map(name => (fs.statSync(name).isDirectory() ? getFolderSize(name) : getFileSize(name)));
+  var result = content.map(name => (statSync(name).isDirectory() ? getFolderSize(name) : getFileSize(name)));
   return single ? result[0] : result;
 };
+
+module.exports.getFolderContentSizes = getFolderContentSizes;

@@ -12,8 +12,8 @@
  */
 module.exports = function parseTemplate(template, features) {
   for (let spec in features) {
-    var regex = new RegExp(`%{${spec}%}`, 'g');
-    var replacement = features[spec];
+    let regex = new RegExp(`%{${spec}%}`, 'g'),
+      replacement = features[spec];
     replacement = typeof replacement == 'function' ? replacement(features) : replacement;
     template = template.replace(
       regex,

@@ -107,9 +107,9 @@ class ReadChunker extends TransformWithMiddleWare {
 
       let length = data.length,
         chunkCount = Math.ceil(length / splitSize);
-
       for (let i = 1; i <= chunkCount; i++) {
         let chunk = data.slice(0, splitSize - this.chunkBytesRead);
+        if (!chunk.length) continue;
         data = data.slice(splitSize - this.chunkBytesRead, Infinity);
         this.bytesRead += chunk.length;
         this.chunkBytesRead += chunk.length;
@@ -250,7 +250,7 @@ class ReadMerger extends TransformWithMiddleWare {
   }
   /**
    * Fuse readable streams data together to a single writable stream
-   * @param  {...[number, NodeJS.ReadableStream]} src Readable stream sources
+   * @param  {...[any, NodeJS.ReadableStream]} src Readable stream sources
    * @param {number} src_0 Size of the chunk being added
    * @param {NodeJS.ReadableStream} src_1 The readable stream itself
    */

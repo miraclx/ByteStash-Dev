@@ -5,7 +5,7 @@
  * @module mosr
  */
 
-let through = require('through2');
+let { Transform } = require('stream');
 
 /**
  * Truly randomly sort an array with the middle-random-index-swap
@@ -39,7 +39,7 @@ function randomiZe(rawArr) {
 
 module.exports = randomiZe;
 
-randomiZe.stream = through(function(chunk, encoding, callback) {
-  this.push(randomiZe(chunk));
-  callback();
+randomiZe.stream = Transform({
+  transform: (chunk, encoding, callback) => callback(null, randomiZe(chunk)),
+  final: next => next(),
 });

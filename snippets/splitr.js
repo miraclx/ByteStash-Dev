@@ -4,7 +4,7 @@ let fs = require('fs'),
   crypto = require('crypto'),
   Promise = require('bluebird'),
   totalSize = require('../libs/total-size'),
-  pathReadDir = require('../libs/path-readdir'),
+  readdir2 = require('../libs/readdir2'),
   ProgressBar = require('../libs/ProgressBar'),
   { ReadChunker, ReadMerger } = require('../libs/split-merge');
 
@@ -39,100 +39,79 @@ function getWriter(chunker, showCuts, printAtAll = 'y') {
   });
 }
 
-function prepareProgress(size, slots) {
+function prepareProgress(size, slots, opts) {
   let progressStream = ProgressBar.stream(size, slots, {
     bar: {
-      blank: '-',
       filler: '=',
-      header: '>',
+      header: 'ue0b0',
       color: ['bgRed', 'white'],
     },
     template: [
       '%{attachedMessage%}',
-      '%{label%}|%{slot:bar%}| %{percentage%}% %{eta%}s [%{slot:size%}/%{slot:size:total%}]',
-      'Total:%{bar%} %{_percentage%}% %{_eta%}s [%{size%}/%{size:total%}]',
+      '%{label%}|%{slot:bar%}| %{_percentage%}% %{_eta%}s [%{slot:size%}/%{slot:size:total%}]',
+      'Total:%{bar%} %{percentage%}% %{eta%}s [%{size%}/%{size:total%}]',
     ],
-    forceFirst: true,
-    _template: {
-      bar({ bar }) {
-        return `${bar ? `   [${bar}]` : ''}`;
-      },
-      eta({ eta }) {
-        return `${eta}`.padStart(3, ' ');
-      },
-      _eta(feats) {
-        return `${feats['slot:eta']}`.padStart(3, ' ');
-      },
-      label({ label }) {
-        return `${label}:`.padEnd(9, ' ');
-      },
-      percentage({ percentage }) {
-        return `${percentage}`.padStart(3, ' ');
-      },
-      _percentage(feats) {
-        return `${feats['slot:percentage']}`.padStart(3, ' ');
-      },
-    },
+    ...opts,
   });
   progressStream.bar.label('Loading');
   return progressStream;
 }
 
-function mainChunk(file, output, parseOutput, callback) {
+function _chunk(file, showCuts, printAtAll) {
   let { size } = fs.statSync(file);
 
-  if (parseOutput[0]) {
-    let reader = fs.createReadStream(file, {
-      highWaterMark: parseOutput[1] == 'y' ? 27 : 16 ** 4,
-    });
+  let reader = fs.createReadStream(file, {
+    highWaterMark: showCuts == 'y' ? 27 : 16 ** 4,
+  });
 
-    let chunker = new ReadChunker({
-      size: parseOutput[1] == 'y' ? 30 : null,
-      length: 50,
-      total: size,
-      appendOverflow: false,
-    });
-    console.log('Parse, not write', chunker.spec);
+  let chunker = new ReadChunker({
+    size: showCuts == 'y' ? 30 : null,
+    length: 50,
+    total: size,
+    appendOverflow: false,
+  });
 
-    let chunkerOutput = getWriter(chunker, ...parseOutput.slice(1, Infinity)).on('finish', () => console.log('All Done'));
-    chunkerOutput.on('finish', callback);
-    reader.pipe(chunker).pipe(chunkerOutput);
-  } else {
-    let reader = fs.createReadStream(file, {
+  console.log('Parse, not write', chunker.spec);
+
+  let chunkerOutput = getWriter(chunker, showCuts, printAtAll || 'y').on('finish', () => console.log('All Done'));
+  reader.pipe(chunker).pipe(chunkerOutput);
+}
+
+function mainChunk(file, output, callback) {
+  let { size } = fs.statSync(file);
+  let reader = fs.createReadStream(file, {
       highWaterMark: 16 ** 4,
-    });
-
-    let chunker = new ReadChunker({
+    }),
+    chunker = new ReadChunker({
       length: 50,
       total: size,
       appendOverflow: false,
-    });
+    }),
+    chunkerOutput = chunker.fiss(output);
 
-    console.log('Write, attach progressBar', chunker.spec);
+  console.log('Write, attach progressBar', chunker.spec);
 
-    let chunkerOutput = chunker.fiss(output);
+  let slots = [...Array(chunker.spec.numberOfParts)].map(
+    (...[, index]) =>
+      index + 1 !== chunker.spec.numberOfParts ? chunker.spec.splitSize : chunker.spec.lastSplitSize || chunker.spec.splitSize
+  );
 
-    let slots = [...Array(chunker.spec.numberOfParts)].map(
-      (...[, index]) =>
-        index + 1 !== chunker.spec.numberOfParts ? chunker.spec.splitSize : chunker.spec.lastSplitSize || chunker.spec.splitSize
-    );
+  let progressStream = prepareProgress(size, ProgressBar.slotsBySize(size, slots));
 
-    let progressStream = prepareProgress(size, ProgressBar.slotsBySize(size, slots));
+  chunker.use('progressBar', ([{ chunkSize }, file], _persist) =>
+    progressStream.next(chunkSize, {
+      _template: { attachedMessage: `Writing to ${file}` },
+    })
+  );
 
-    chunker.use('progressBar', ([{ chunkSize }, file], _persist) =>
-      progressStream.next(chunkSize, {
-        _template: { attachedMessage: `Writing to ${file}` },
-      })
-    );
-
-    progressStream.on('complete', bar => bar.end('Complete\n')).on('complete', callback);
-    reader.pipe(chunker).pipe(chunkerOutput);
-  }
+  progressStream.on('complete', bar => bar.end('Complete\n'));
+  if (callback) progressStream.on('complete', callback);
+  reader.pipe(chunker).pipe(chunkerOutput);
 }
 
 function mainMerge(input, output, callback) {
   let size = totalSize(input);
-  let inputBlocks = (fs.statSync(input).isDirectory() ? pathReadDir(input) : [input]).map(file => [
+  let inputBlocks = (fs.statSync(input).isDirectory() ? readdir2(input) : [input]).map(file => [
     fs.statSync(file).size,
     fs.createReadStream(file),
   ]);
@@ -155,12 +134,46 @@ function mainMerge(input, output, callback) {
   mergeStash.pipe(merger).pipe(fs.createWriteStream(output));
 }
 
-mainChunk('./resource/block_file.xtash', `./test.dir/ground0/f1/results%{_number%}.file`, process.argv.slice(2), () => {
-  mainMerge(`./test.dir/ground0/f1`, './test.dir/ground0/block.block');
-});
+function exec(fn, name, callback, ...args) {
+  if (!args.every(v => v !== undefined)) throw new Error('Please complete the argument list');
+  console.log(`${name}: [${args.join(' -> ')}]`);
+  fn(...args, callback ? callback(args) : null);
+}
+
+let engine = {
+  chunk: [exec, [mainChunk, 'Chunk', ,], [, ,]],
+  merge: [exec, [mainMerge, 'Merge', ,], [, ,]],
+  _chunk: [exec, [_chunk, 'Chunk, Print Parts', ,], [, , ,]],
+  '+': 'chunk',
+  '-': 'merge',
+  '+-': [exec, [mainChunk, 'Chunk, then Merge', args => folder => mainMerge(folder, args[2])], [, , ,]],
+  '+!': '_chunk',
+};
+
+function main(_method) {
+  let _input,
+    method,
+    input = process.argv.slice(2);
+  if (input[0] in engine) [method, input] = [input[0], input.slice(1)];
+  let block = (typeof engine[method] == 'string' ? engine[engine[method]] : engine[method]) || engine[_method];
+  _input = [...block[1]];
+  _input.push(...Object.assign([], block[2], input));
+  block[0].call(null, ..._input);
+}
+
+main('chunk');
 
 /**
- * node splitr.js
+ * > node splitr [action?=chunk] <input> <output> <?:extra>
+ * ================================================
+ * > node index chunk ./file ./folder              Chunk a file
+ * > node index merge ./folder ./file              Merge chunk streams into one
+ * > node index _chunk ./file y y                  Chunk a file, <output=?[y] Print parts to screen> <extra=?[y] Whether or not to show data at all>
+ * > node index ./file ./folder                    Alias for <action=chunk>
+ * > node index + ./file ./folder                  Alias for <action=chunk>
+ * > node index - ./folder ./file                  Alias for <action=merge>
+ * > node index +- ./file ./folder ./re-compiled   Chunk a file, merge from the resulting folder
+ * > node index +! ./file ./folder                 Alias for <action=_chunk>
  */
 
 function attachPipesTo(reader, chunker, chunkerOutput) {
@@ -222,13 +235,3 @@ function attachPipesTo(reader, chunker, chunkerOutput) {
 
   process.on('exit', () => console.timeEnd('process complete'));
 }
-
-// Promise.mapSeries(
-//   ['./resource/10kb_file.txt', './resource/100mb_file.txt', './resource/500mb_file.txt', './resource/500mb_file.txt'],
-//   (file, index) =>
-//     new Promise((resolve, reject) => {
-//       mainChunk(file, `./test.dir/heap/f${index + 1}/results%{_number%}.file`, process.argv.slice(2))
-//         .on('finish', resolve)
-//         .on('error', reject);
-//     })
-// );
