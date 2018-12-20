@@ -3,10 +3,10 @@ let fs = require('fs'),
   stream = require('stream'),
   crypto = require('crypto'),
   readlineSync = require('readline-sync'),
-  totalSize = require('./libs/total-size'),
-  parseBytes = require('./libs/parse-bytes'),
-  { ReadChunker, ReadMerger } = require('./libs/split-merge'),
-  ProgressBar = require('./libs/ProgressBar');
+  totalSize = require('../libs/total-size'),
+  parseBytes = require('../libs/parse-bytes'),
+  { ReadChunker, ReadMerger } = require('../libs/split-merge'),
+  ProgressBar = require('../libs/ProgressBar');
 
 class XMAP {
   constructor(objectSpecs, bufSlots) {
@@ -67,7 +67,7 @@ function prepareProgress(size, slots, opts) {
   let progressStream = ProgressBar.stream(size, slots, {
     bar: {
       filler: '=',
-      header: 'ue0b0',
+      header: '\ue0b0',
       color: ['bgRed', 'white'],
     },
     template: [
@@ -120,7 +120,7 @@ function encrypt(input, output, callback) {
   let user_key;
   do {
     if (
-      (user_key = readlineSync.question('Please enter the password for encrypting : ', {
+      !(user_key = readlineSync.question('Please enter the password for encrypting : ', {
         mask: '',
         hideEchoBack: true,
       }))
@@ -219,7 +219,7 @@ function decrypt(folder, output, callback) {
   let user_key;
   do {
     if (
-      (user_key = readlineSync.question('Please enter the password for decrypting : ', {
+      !(user_key = readlineSync.question('Please enter the password for decrypting : ', {
         mask: '',
         hideEchoBack: true,
       }))
@@ -254,7 +254,12 @@ function decrypt(folder, output, callback) {
     if (callback) callback(output);
   });
 
-  return stream.pipeline(mergeStash, merger, fs.createWriteStream(output));
+  return stream.pipeline(
+    mergeStash,
+    merger,
+    fs.createWriteStream(output),
+    err => err && console.error('An error occurred\n' + err)
+  );
 }
 
 function exec(fn, name, callback, ...args) {

@@ -388,7 +388,7 @@ module.exports = class ProgressBar {
    * Create a streamified bar for use with generators
    * @param {Number} total Total attainable value of bytes in <N>
    * @param {Number|Number[]} slots Number of slots in <%>
-   * @param {{}} [opts] Options for the bar
+   * @param {_streamOpts} [opts] Options for the bar
    * @param {(bar:ProgressBar,slotLevel:Number,template:{}) => void} [actor] The actor for every yield
    */
   static stream(total, slots, opts, actor) {
@@ -400,6 +400,7 @@ module.exports = class ProgressBar {
             template: '|%{bar%}| [%{flipper%}] %{label%} %{slot:runtime%}s %{slot:size%}',
           }
         : {}),
+      forceFirst: true,
       ...opts,
     };
     return this.streamify(progressBar, actor, opts);
@@ -427,7 +428,7 @@ module.exports = class ProgressBar {
           if (typeof total == 'function') through.setLength(total(bar));
           if (bar.isEnded) return;
           let _template = {
-            'slot:bar': parseBar(bar, typeof bar.length(), progress.percentage),
+            'slot:bar': parseBar(bar, bar.length(), progress.percentage),
             'slot:size': parseBytes(progress.transferred, 2, { shorten: true }),
             'slot:size:total': parseBytes(progress.length, 2, { shorten: true }),
             'slot:percentage': progress.percentage.toFixed(0),
