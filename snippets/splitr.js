@@ -43,7 +43,7 @@ function prepareProgress(size, slots, opts) {
   let progressStream = ProgressBar.stream(size, slots, {
     bar: {
       filler: '=',
-      header: 'ue0b0',
+      header: '\ue0b0',
       color: ['bgRed', 'white'],
     },
     template: [
