@@ -1,50 +1,40 @@
 let _ = require('lodash'),
   chalk = require('chalk'),
   ansiStyles = require('ansi-styles'),
-  ProgressBar = require('../libs/ProgressBar');
+  ProgressBar = require('../libs/progress2');
 
 let colorsObj = {
-  bg: Object.getOwnPropertyNames(ansiStyles.bgColor).filter(v => !['ansi', 'ansi16m', 'ansi256', 'close'].includes(v)),
-  fg: Object.getOwnPropertyNames(ansiStyles.color).filter(v => !['ansi', 'ansi16m', 'ansi256', 'close'].includes(v)),
+  bg: Object.keys(ansiStyles.bgColor).filter(v => !['ansi', 'ansi16m', 'ansi256', 'close'].includes(v)),
+  fg: Object.keys(ansiStyles.color).filter(v => !['ansi', 'ansi16m', 'ansi256', 'close'].includes(v)),
 };
 
 /**
  * Color-ify the progressbar for every update
- * @param {ProgressBar} progressBar The progressbar
  * @param {*} colors The color object
  */
-function startExec(progressBar, colors = colorsObj) {
-  progressBar = ProgressBar.isBar(progressBar)
-    ? progressBar
-    : new ProgressBar(100, [...Array(20)].map(() => Math.random() * 10), {
-        colorize: true,
-        clean: true,
-        forceFirst: false,
-        template: `${chalk.underline('%{label%}')}%{_bar%} [%{percentage%}%]`,
-        _template: {
-          _bar({ bar }) {
-            return bar ? ` [${bar}]` : '';
-          },
-        },
-      });
+function main(colors = colorsObj) {
+  let bar = new ProgressBar(100, [...Array(20)].map(() => Math.random() * 10), {
+    clean: true,
+    colorize: true,
+    template: `${chalk.underline(':{label}')} :{bar} [:{percentage}%]`,
+    forceFirst: false,
+  });
   let timer = setInterval(() => {
-    progressBar.opts.bar = _.merge({}, progressBar.opts.bar, {
+    bar.opts.bar = _.merge({}, bar.opts.bar, {
       color: [
         colors.bg[Math.floor(Math.random() * (colors.bg.length - 1))],
         colors.fg[Math.floor(Math.random() * (colors.fg.length - 1))],
       ],
     });
-    let random = progressBar.slots.map(({ value }) => (value < 100 ? Math.random() * 10 : 0));
-    if (progressBar.isComplete()) {
-      progressBar.end('Completed!\n');
-      return clearInterval(timer);
-    }
-    progressBar.tick(random);
+    let random = bar.slots.map(({ value }) => (value < 100 ? Math.random() * 10 || 1 : 1));
+    bar.print(random);
+    bar.tick(random).draw();
+    if (bar.isComplete()) bar.end('Completed!\n'), clearInterval(timer);
   }, 1000);
-  return progressBar;
+  return bar;
 }
 
-startExec();
+main();
 
 /**
  * > node colorize.js  // Spawn a colorized progressbar

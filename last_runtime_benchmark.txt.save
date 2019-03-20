@@ -1,0 +1,12 @@
+
+enc -do   : 0:33.56
+dec -do   : 0:21.71
+
+enc -sdo -b $((70*2**20)) : 0:28.47
+dec -do                   : 0:15.70 [lost data]
+
+enc -sudo  : 
+dec -do    :
+
+
+** last increment when using -b must be a <total> - <completed> abeg

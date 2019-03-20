@@ -1,6 +1,6 @@
 let _ = require('lodash'),
   { ReadChunker, ReadMerger, WriteAttacher } = require('../libs/split-merge'),
-  ProgressBar = require('../libs/ProgressBar'),
+  ProgressBar = require('../libs/progress2'),
   readdirSync = require('../libs/path-readdir');
 
 function generateBarStream(label, size, slots) {
@@ -10,32 +10,6 @@ function generateBarStream(label, size, slots) {
         filler: '=',
         header: '>',
         color: ['bgRed', 'white'],
-      },
-      template: [
-        '%{attachedMessage%}',
-        '%{label%}|%{slot:bar%}| %{percentage%}% %{eta%}s [%{slot:size%}/%{slot:size:total%}]',
-        'Total:%{bar%} %{_percentage%}% %{_eta%}s [%{size%}/%{size:total%}]',
-      ],
-      forceFirst: true,
-      _template: {
-        bar({ bar }) {
-          return `${bar ? `   [${bar}]` : ''}`;
-        },
-        eta({ eta }) {
-          return `${eta}`.padStart(3, ' ');
-        },
-        _eta(feats) {
-          return `${feats['slot:eta']}`.padStart(3, ' ');
-        },
-        label({ label }) {
-          return `${label}:`.padEnd(9, ' ');
-        },
-        percentage({ percentage }) {
-          return `${percentage}`.padStart(3, ' ');
-        },
-        _percentage(feats) {
-          return `${feats['slot:percentage']}`.padStart(3, ' ');
-        },
       },
     }),
     { bar } = progressStream;
@@ -56,7 +30,7 @@ function runChunkify(inputFile, outputFiles) {
   let chunkerOutput = new WriteAttacher()
     .use('barStream', (size, file, persist) =>
       progressStream.next(size, {
-        _template: {
+        variables: {
           attachedMessage: `|${(persist.index = persist.index + 1 || 1)}| Writing to output file ${file}`,
         },
       })
@@ -77,8 +51,8 @@ function runMergify(inputFiles, outputFile) {
   let mergerOutput = new WriteAttacher()
     .use('barStream', (size, file, persist) =>
       progressStream.next(size, {
-        _template: {
-          attachedMessage: `|${(persist.index = persist.index + 1 || 1)}| Merging from input file ${file}`,
+        variables: {
+          tag: `|${(persist.index = persist.index + 1 || 1)}| Merging from input file ${file}`,
         },
       })
     )

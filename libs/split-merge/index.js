@@ -6,10 +6,10 @@
  */
 
 let fs = require('fs'),
-  { Transform, Readable, Writable } = require('stream'),
+  { Transform, Readable, Writable, pipeline } = require('stream'),
   EventEmitter = require('events'),
   { merge: mergeOpts } = require('lodash'),
-  parseTemplate = require('./parse-template');
+  parseTemplate = require('../parse-template');
 
 class TransformWithMiddleWare extends Transform {
   constructor(options) {
@@ -19,7 +19,7 @@ class TransformWithMiddleWare extends Transform {
   /**
    * Middleware extender, transform and manipulate the chunk streams
    * @param {String} label Label for the middleware, useful for debugging
-   * @param {(...any[], persist: {}) => NodeJS.ReadWriteStream} fn Function returning a transform stream
+   * @param {(data: any[], persist: {}) => NodeJS.ReadWriteStream} fn Function returning a transform stream
    * @param {{}} persist An object to hold static values for every call
    */
   use(label, fn, persist = {}, callback) {
@@ -33,7 +33,7 @@ class TransformWithMiddleWare extends Transform {
       );
     if (!label || typeof label !== 'string') throw Error('Please specify <label> as a :String');
     else if (!fn || typeof fn !== 'function') throw Error('Please specify <fn> as a :Function');
-    if (persist && typeof persist === 'function') [callback, persist] = [persist, null];
+    if (persist && typeof persist === 'function') [callback, persist] = [persist, callback || {}];
     this.pipeStack.push([fn, { label, persist, callback }]);
     return this;
   }
@@ -47,15 +47,16 @@ class TransformWithMiddleWare extends Transform {
       let _stream = fn(data, persist);
       if (!(_stream instanceof EventEmitter && [_stream.read, _stream.write].every(slot => typeof slot == 'function')))
         this.emit('error', `Function labelled [${label}] should return a Duplex stream`);
-      if (callback) _stream.on('error', callback);
-      return thisStream.pipe(_stream);
+      let noop = error => error && this.emit('error', error);
+      if (callback) _stream.on('error', callback || noop);
+      return pipeline(thisStream, _stream, callback || noop);
     }, reader);
   }
 }
 
 class ReadChunker extends TransformWithMiddleWare {
   /**
-   * @param {Number | {size: number, total: number, length: number}} spec Length of all chunks or options for the execution
+   * @param {Number | options} spec Length of all chunks or options for the execution
    */
   constructor(spec) {
     /**
@@ -74,13 +75,12 @@ class ReadChunker extends TransformWithMiddleWare {
     if (typeof spec === 'number') options.size = spec;
     else if (typeof spec === 'object') options = mergeOpts(options, spec);
     else throw Error('<spec> parameter must either be an object or a number');
-    if (!options.size) {
+    if (!(options.size | 0)) {
       if (options.length) {
-        if (!options.total) throw Error('<.total> must be set when specifying <spec:{}>.length');
-        else if (options.total === Infinity) throw Error('<.total> must be defined and specific when setting <spec:{}>.length');
+        if (!(options.total | 0)) throw Error('<.total> must be defined and specific when setting <spec:{}>.length');
         options.size = Math.floor(options.total / options.length);
-        options.appendOverflow = true;
-      } else throw Error('<.size> must be specified as <spec> or <spec:{}>.size');
+        options.appendOverflow = typeof options.appendOverflow !== 'boolean' ? !0 : options.appendOverflow;
+      } else throw Error('<.size> must be defined as <spec> or <spec:{}>.size');
     }
 
     let remainder = options.total % options.size;
@@ -88,13 +88,40 @@ class ReadChunker extends TransformWithMiddleWare {
     let _spec = {
         total: options.total,
         splitSize: Math.min(options.size, options.total),
-        numberOfParts: (options.appendOverflow ? Math.floor : Math.ceil).call(null, options.total / options.size),
+        numberOfParts: (options.appendOverflow ? Math.floor : Math.ceil).call(null, options.total / options.size || Infinity),
         lastSplitSize: options.appendOverflow ? options.size + remainder : remainder || options.size,
       },
       { total, splitSize, numberOfParts, lastSplitSize } = _spec;
 
     let overflow = new Buffer.alloc(0);
 
+    function handleBytes(chunk) {
+      this.bytesRead += chunk.length;
+      this.chunkBytesRead += chunk.length;
+
+      let isLastChunk =
+          Math.ceil((this.bytesRead + (options.appendOverflow ? splitSize - lastSplitSize : 0)) / splitSize) === numberOfParts,
+        chunkSize = isLastChunk ? lastSplitSize : splitSize;
+
+      let number = Math.min(Math.ceil(this.bytesRead / splitSize), numberOfParts);
+      let index = number - 1;
+      let chunkPartData = {
+          size: chunk.length,
+          finalPart: this.chunkBytesRead == chunkSize,
+          remaining: chunkSize - this.chunkBytesRead,
+        },
+        chunkData = {
+          index,
+          total: numberOfParts,
+          number,
+          _index: total === Infinity ? index : index.toString().padStart(`${numberOfParts}`.length, 0),
+          _number: total === Infinity ? number : number.toString().padStart(`${numberOfParts}`.length, 0),
+          chunkSize,
+          finalChunk: isLastChunk,
+        };
+      if (this.chunkBytesRead == chunkSize) this.chunkBytesRead = 0;
+      this.push([chunk, chunkPartData, chunkData]);
+    }
     /**
      * Transforming chunker
      * @param {string|Buffer} data Flowing input stream to be chunked
@@ -102,39 +129,14 @@ class ReadChunker extends TransformWithMiddleWare {
      * @param {Function} next Function for loading next chunk
      */
     function transform(data, _encoding, next) {
-      // Append the previous buffer overflow, if any
       data = Buffer.concat([overflow, data]);
-
       let length = data.length,
         chunkCount = Math.ceil(length / splitSize);
       for (let i = 1; i <= chunkCount; i++) {
         let chunk = data.slice(0, splitSize - this.chunkBytesRead);
         if (!chunk.length) continue;
         data = data.slice(splitSize - this.chunkBytesRead, Infinity);
-        this.bytesRead += chunk.length;
-        this.chunkBytesRead += chunk.length;
-
-        let isLastChunk =
-            Math.ceil((this.bytesRead + (options.appendOverflow ? splitSize - lastSplitSize : 0)) / splitSize) === numberOfParts,
-          chunkSize = isLastChunk ? lastSplitSize : splitSize;
-
-        let number = Math.min(Math.ceil(this.bytesRead / splitSize), numberOfParts);
-        let index = number - 1;
-        let chunkPartData = {
-            size: chunk.length,
-            remaining: chunkSize - this.chunkBytesRead,
-            finalPart: this.chunkBytesRead == chunkSize,
-          },
-          chunkData = {
-            chunkSize,
-            finalChunk: isLastChunk,
-            index,
-            _index: total === Infinity ? index : index.toString().padStart(`${numberOfParts}`.length, 0),
-            number,
-            _number: total === Infinity ? number : number.toString().padStart(`${numberOfParts}`.length, 0),
-          };
-        this.push([chunk, chunkPartData, chunkData]);
-        if (this.chunkBytesRead == chunkSize) this.chunkBytesRead = 0;
+        handleBytes.call(this, chunk);
       }
       overflow = data;
       next();
@@ -145,33 +147,7 @@ class ReadChunker extends TransformWithMiddleWare {
       halfOpen: false,
       transform,
       flush(next) {
-        if (overflow.length) {
-          this.bytesRead += overflow.length;
-          this.chunkBytesRead += overflow.length;
-
-          let isLastChunk = this.bytesRead === total,
-            chunkSize = isLastChunk ? lastSplitSize : splitSize;
-
-          let number = numberOfParts,
-            index = number - 1;
-
-          let chunkPartData = {
-              size: overflow.length,
-              remaining: chunkSize - this.chunkBytesRead,
-              finalPart: this.chunkBytesRead == chunkSize,
-            },
-            chunkData = {
-              chunkSize,
-              finalChunk: isLastChunk,
-              index,
-              _index: total === Infinity ? index : index.toString().padStart(`${numberOfParts}`.length, 0),
-              number,
-              _number: total === Infinity ? number : number.toString().padStart(`${numberOfParts}`.length, 0),
-            };
-
-          this.push([overflow, chunkPartData, chunkData]);
-          if (this.chunkBytesRead == chunkSize) this.chunkBytesRead = 0;
-        }
+        if (overflow.length) handleBytes.call(this, overflow);
         next();
       },
     };
@@ -190,7 +166,7 @@ class ReadChunker extends TransformWithMiddleWare {
   fiss(output, outputManipulator) {
     let self = this;
     // pipe all pipe stacks for every pipe
-    return Writable({
+    return new Writable({
       objectMode: true,
       write([data, chunkPartData, chunkData], encoding, next) {
         this.stage = this.stage || { index: -1, file: null, reader: null, writer: null };
@@ -200,9 +176,7 @@ class ReadChunker extends TransformWithMiddleWare {
           let oldFile;
           file = typeof output == 'string' ? parseTemplate(output, chunkData) : null;
           if (outputManipulator) [file, oldFile] = [outputManipulator(file), file];
-          reader = Readable({
-            read() {},
-          });
+          reader = Readable({ read() {} });
           this.stage = {
             index: chunkData.index,
             file,
@@ -250,7 +224,7 @@ class ReadMerger extends TransformWithMiddleWare {
   }
   /**
    * Fuse readable streams data together to a single writable stream
-   * @param  {...[any, NodeJS.ReadableStream]} src Readable stream sources
+   * @param  {...([any, NodeJS.ReadableStream]|NodeJS.ReadableStream)} src Readable stream sources
    * @param {number} src_0 Size of the chunk being added
    * @param {NodeJS.ReadableStream} src_1 The readable stream itself
    */

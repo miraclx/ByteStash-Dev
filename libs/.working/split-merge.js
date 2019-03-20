@@ -1,65 +1,60 @@
-let fs = require('fs'),
-  path = require('path'),
-  util = require('util'),
-  stream = require('stream'),
-  through = require('through2'),
-  { merge: mergeOpts } = require('lodash'),
-  parseTemplate = require('./parse-template'),
-  totalSize = require('./total-size');
-
 /**
- * Build an output, `Writable` stream for `ReadChunker`
- * @param {...(stream:NodeJS.ReadableStream, size:number) => stream} pipes Functions to extend the stream and update based on size
+ * @copyright (c) 2017 Miraculous Owonubi
+ * @author Miraculous Owonubi
+ * @license Apache-2.0
+ * @module split-merge
  */
-class WriteAttacher extends stream.Writable {
-  constructor() {
-    super({
-      objectMode: true,
-      write(chunkInfo, encoding, callback) {
-        let { inputFile, outputFile } = chunkInfo;
-        let inputStream = fs.createReadStream(inputFile, chunkInfo.inputStreamOpts);
-        if (!fs.existsSync(outputFile)) fs.writeFileSync(outputFile, Buffer.alloc(0));
-        let outputStream = fs.createWriteStream(outputFile, chunkInfo.outputStreamOpts);
-        inputStream.on('error', callback);
-        // When we're done with a chunk, emit the done event
-        outputStream.on('finish', () => {
-          this.emit('done', { in: inputFile, out: outputFile });
-          callback(null);
-        });
-        this.pipeAll(inputStream, (f, persist) => f(chunkInfo.size, chunkInfo.specialFile, persist)).pipe(outputStream);
-      },
-    });
 
+let fs = require('fs'),
+  { Transform, Readable, Writable, pipeline } = require('stream'),
+  EventEmitter = require('events'),
+  { merge: mergeOpts } = require('lodash'),
+  parseTemplate = require('./parse-template');
+
+class TransformWithMiddleWare extends Transform {
+  constructor(options) {
+    super(options);
     this.pipeStack = [];
   }
   /**
-   * Middleware functions returning fresh pipes to be attached on every chunk
-   * @param {String} label Label for identifying function
-   * @param {((size: number, file: string, persist: {}) => stream.Duplex)} funcOftStream Function returning a Duplex stream
+   * Middleware extender, transform and manipulate the chunk streams
+   * @param {String} label Label for the middleware, useful for debugging
+   * @param {(data: any[], persist: {}) => NodeJS.ReadWriteStream} fn Function returning a transform stream
+   * @param {{}} persist An object to hold static values for every call
    */
-  use(label, funcOftStream) {
-    if (typeof funcOftStream !== 'function')
+  use(label, fn, persist = {}, callback) {
+    // Push functions into a stack of pipe derivative functions
+    if (typeof fn !== 'function')
       this.emit(
         'error',
         new Error(
           'You can only attach functions returning instances of Duplex streams. Consider a PassThrough or Transform stream'
         )
       );
-    this.pipeStack.push([funcOftStream, {}, label]);
+    if (!label || typeof label !== 'string') throw Error('Please specify <label> as a :String');
+    else if (!fn || typeof fn !== 'function') throw Error('Please specify <fn> as a :Function');
+    if (persist && typeof persist === 'function') [callback, persist] = [persist, {}];
+    this.pipeStack.push([fn, { label, persist, callback }]);
     return this;
   }
-  pipeAll(inStream, actFn) {
-    return this.pipeStack.reduce((thisStream, block) => {
-      let _stream = actFn(...block);
-      if (!(_stream && _stream.readable && _stream.writable))
-        this.emit('error', `Function labelled [${block[2]}] should return a Duplex stream`);
-      return thisStream.pipe(_stream);
-    }, inStream);
+  /**
+   * Create a piped chain from all the middleware functions
+   * @param {NodeJS.ReadableStream} reader The root readable stream
+   * @param  {...any[]} data First arguments to the pipestack function
+   */
+  pipeAll(reader, ...data) {
+    return this.pipeStack.reduce((thisStream, [fn, { label, persist, callback }]) => {
+      let _stream = fn(data, persist);
+      if (!(_stream instanceof EventEmitter && [_stream.read, _stream.write].every(slot => typeof slot == 'function')))
+        this.emit('error', `Function labelled [${label}] should return a Duplex stream`);
+      let noop = error => error && this.emit('error', error);
+      if (callback) _stream.on('error', callback || noop);
+      return pipeline(thisStream, _stream, callback || noop);
+    }, reader);
   }
 }
-// util.inherits(WriteAttacher, stream.Writable);
 
-class ReadChunker extends stream.Transform {
+class ReadChunker extends TransformWithMiddleWare {
   /**
    * @param {Number | {size: number, total: number, length: number}} spec Length of all chunks or options for the execution
    */
@@ -80,270 +75,198 @@ class ReadChunker extends stream.Transform {
     if (typeof spec === 'number') options.size = spec;
     else if (typeof spec === 'object') options = mergeOpts(options, spec);
     else throw Error('<spec> parameter must either be an object or a number');
-    if (!options.size) {
+    if (!(options.size | 0)) {
       if (options.length) {
-        if (!options.total) throw Error('<.total> must be set when specifying <spec:{}>.length');
-        else if (options.total === Infinity) throw Error('<.total> must be defined and specific when setting <spec:{}>.length');
+        if (!(options.total | 0)) throw Error('<.total> must be defined and specific when setting <spec:{}>.length');
         options.size = Math.floor(options.total / options.length);
-      } else throw Error('<.size> must be specified as <spec> or <spec:{}>.size');
+        options.appendOverflow = true;
+      } else throw Error('<.size> must be defined as <spec> or <spec:{}>.size');
     }
 
-    let streamGenerator = generateChunk(options.total, options.size);
+    let remainder = options.total % options.size;
+
+    let _spec = {
+        total: options.total,
+        splitSize: Math.min(options.size, options.total),
+        numberOfParts: (options.appendOverflow ? Math.floor : Math.ceil).call(null, options.total / options.size || Infinity),
+        lastSplitSize: options.appendOverflow ? options.size + remainder : remainder || options.size,
+      },
+      { total, splitSize, numberOfParts, lastSplitSize } = _spec;
+
+    let overflow = new Buffer.alloc(0);
+    function handleBytes() {}
+    /**
+     * Transforming chunker
+     * @param {string|Buffer} data Flowing input stream to be chunked
+     * @param {string} _encoding Encoding for the content
+     * @param {Function} next Function for loading next chunk
+     */
+    function transform(data, _encoding, next) {
+      // Append the previous buffer overflow, if any
+      data = Buffer.concat([overflow, data]);
+
+      let length = data.length,
+        chunkCount = Math.ceil(length / splitSize);
+      for (let i = 1; i <= chunkCount; i++) {
+        let chunk = data.slice(0, splitSize - this.chunkBytesRead);
+        if (!chunk.length) continue;
+        data = data.slice(splitSize - this.chunkBytesRead, Infinity);
+        this.bytesRead += chunk.length;
+        this.chunkBytesRead += chunk.length;
+
+        let isLastChunk =
+            Math.ceil((this.bytesRead + (options.appendOverflow ? splitSize - lastSplitSize : 0)) / splitSize) === numberOfParts,
+          chunkSize = isLastChunk ? lastSplitSize : splitSize;
+
+        let number = Math.min(Math.ceil(this.bytesRead / splitSize), numberOfParts);
+        let index = number - 1;
+        let chunkPartData = {
+            size: chunk.length,
+            finalPart: this.chunkBytesRead == chunkSize,
+            remaining: chunkSize - this.chunkBytesRead,
+          },
+          chunkData = {
+            index,
+            total: numberOfParts,
+            number,
+            _index: total === Infinity ? index : index.toString().padStart(`${numberOfParts}`.length, 0),
+            _number: total === Infinity ? number : number.toString().padStart(`${numberOfParts}`.length, 0),
+            chunkSize,
+            finalChunk: isLastChunk,
+          };
+        this.push([chunk, chunkPartData, chunkData]);
+        if (this.chunkBytesRead == chunkSize) this.chunkBytesRead = 0;
+      }
+      overflow = data;
+      next();
+    }
 
     let transformSpec = {
       objectMode: true,
       halfOpen: false,
-      transform(data, _encoding, next) {
-        let { value } = streamGenerator.next(data);
-        next(null, value);
-      },
+      transform,
       flush(next) {
-        console.log('flushing');
-        let _done = false;
-        do {
-          let { value, done } = streamGenerator.next(Buffer.from(''));
-          if (!done) {
-            if (!value.data.length) done = true;
-            else this.push(value);
-          }
-          _done = done;
-        } while (!_done);
+        console.log('\n\nflusj\n\n');
+        if (overflow.length) {
+          this.bytesRead += overflow.length;
+          this.chunkBytesRead += overflow.length;
+
+          let isLastChunk = this.bytesRead === total,
+            chunkSize = isLastChunk ? lastSplitSize : splitSize;
+
+          let number = Math.ceil(this.bytesRead / splitSize),
+            index = number - 1;
+
+          let chunkPartData = {
+              size: overflow.length,
+              finalPart: this.chunkBytesRead == chunkSize,
+              remaining: chunkSize - this.chunkBytesRead,
+            },
+            chunkData = {
+              index,
+              total: numberOfParts,
+              number,
+              _index: total === Infinity ? index : `${index}`.padStart(`${numberOfParts}`.length, 0),
+              _number: total === Infinity ? number : `${number}`.padStart(`${numberOfParts}`.length, 0),
+              chunkSize,
+              finalChunk: isLastChunk,
+            };
+
+          this.push([overflow, chunkPartData, chunkData]);
+          if (this.chunkBytesRead == chunkSize) this.chunkBytesRead = 0;
+        }
         next();
       },
     };
 
     super(transformSpec);
-
-    Object.assign(this, { spec: streamGenerator.next().value });
-
-    function* generateChunk(total, splitSize) {
-      let splitLength = total / splitSize;
-      let numberOfParts = options.appendOverflow ? Math.floor(splitLength) : Math.ceil(splitLength);
-      let lastSplitSize = options.appendOverflow ? splitSize + (total % splitSize) : total % splitSize;
-      let firstRun = true,
-        bytesRead = 0,
-        chunkBytesRead = 0,
-        data = new Buffer.alloc(0),
-        overflow = new Buffer.alloc(0);
-
-      while (bytesRead < total) {
-        if (firstRun) {
-          firstRun = !(data = yield { total, numberOfParts, splitSize, lastSplitSize });
-        } else {
-          if (chunkBytesRead == splitSize) chunkBytesRead = 0;
-          let fillable = splitSize - chunkBytesRead;
-          let sliceIndex = Math.min(fillable, data.length);
-          overflow = data.slice(sliceIndex, Infinity);
-          data = data.slice(0, sliceIndex);
-
-          bytesRead += data.length;
-          chunkBytesRead += data.length;
-
-          let isLastChunk = bytesRead == total;
-          let number =
-              Math.ceil(bytesRead / splitSize) - (isLastChunk && options.appendOverflow && splitSize !== lastSplitSize ? 1 : 0),
-            index = number - 1;
-
-          data = Buffer.concat([
-            overflow,
-            yield {
-              data,
-              size: data.length,
-              last: isLastChunk,
-              spec: {
-                index,
-                _index: total === Infinity ? index : index.toString().padStart(`${numberOfParts}`.length, 0),
-                number,
-                _number: total === Infinity ? number : number.toString().padStart(`${numberOfParts}`.length, 0),
-                total: numberOfParts,
-              },
-            },
-          ]);
-        }
-      }
-    }
-    this.pipeStack = [];
+    this.spec = _spec;
+    this.bytesRead = this.chunkBytesRead = 0;
   }
-  use(label, fn) {
-    // Push functions into a stack of pipe derivative functions
-    if (typeof fn !== 'function')
-      this.emit(
-        'error',
-        new Error(
-          'You can only attach functions returning instances of Duplex streams. Consider a PassThrough or Transform stream'
-        )
-      );
-    this.pipeStack.push([fn, {}, label]);
-    return this;
-  }
+
   /**
-   *
-   * @param {String|Buffer|(String|Buffer)[]} output Output file(s) to be written to
-   * @returns {NodeJS.WriteStream}
+   * Recieve and control the output chunks
+   * @param {string | string[] | Buffer | Buffer[] | NodeJS.WritableStream)} output Output file(s) to be written to
+   * @param {(file:string) => string} [outputManipulator] Function to manipulate the input file, (if -any)
+   * @returns {NodeJS.WritableStream}
    */
-  fiss(output) {
+  fiss(output, outputManipulator) {
     let self = this;
     // pipe all pipe stacks for every pipe
-    return stream.Writable({
+    return Writable({
       objectMode: true,
-      write(chunkData, encoding, callback) {
+      write([data, chunkPartData, chunkData], encoding, next) {
         this.stage = this.stage || { index: -1, file: null, reader: null, writer: null };
-        let { file, reader, writer } = this.stage;
-        if (chunkData.spec.index !== this.stage.index) {
-          file = parseTemplate(output, chunkData.spec);
-          if (this.stage.reader) this.stage.reader.push(null);
+        let { file, reader, _reader, writer, _writer } = this.stage;
+
+        if (chunkData.index !== this.stage.index) {
+          let oldFile;
+          file = typeof output == 'string' ? parseTemplate(output, chunkData) : null;
+          if (outputManipulator) [file, oldFile] = [outputManipulator(file), file];
+          reader = Readable({ read() {} });
           this.stage = {
-            index: chunkData.spec.index,
+            index: chunkData.index,
             file,
-            reader: stream.Readable({
-              read() {},
+            reader,
+            _reader: self.pipeAll(reader, chunkData, file, oldFile),
+            writer:
+              typeof output == 'string'
+                ? fs.createWriteStream(file)
+                : output instanceof EventEmitter && typeof output.write == 'function'
+                  ? output
+                  : null,
+            _writer: Writable({
+              write: (data, e, cb) => {
+                if (!writer.write(data, () => _writer.emit('done'))) writer.once('drain', cb);
+                else process.nextTick(cb);
+              },
             }),
-            writer: fs.createWriteStream(file),
           };
-          ({ file, reader, writer } = this.stage);
-          self.pipeStack
-            .reduce((thisStream, block) => {
-              let _stream = block[0].apply(null, [chunkData.size, file, block[1]]);
-              if (!(_stream && _stream.readable && _stream.writable))
-                this.emit('error', `Function labelled [${block[2]}] should return a Duplex stream`);
-              return thisStream.pipe(_stream);
-            }, reader)
-            .pipe(writer);
-          self.emit('chunk', file);
+          ({ file, reader, _reader, writer, _writer } = this.stage);
+          _reader.pipe(_writer);
+          if (!writer) self.emit('error', 'Output should be defined as a writable stream or a definite output file template');
         }
-        reader.push(chunkData.data);
-        if (chunkData.last) reader.push(null);
-        callback(null, chunkData);
+
+        function clean() {
+          if (chunkPartData.finalPart) reader.push(null);
+          next();
+        }
+        _writer.once('done', clean);
+        reader.push(data);
       },
     });
   }
 }
 
-class ReadMerger extends stream.Readable {
-  // Trust the coder that files inputed are legit
-  constructor(files, output, options) {
-    if (!Array.isArray(files)) throw Error('<files> parameter must be an Array');
-    if (typeof output !== 'string') throw Error('<output> parameter must be specified as a string file path');
-    if (typeof options !== 'object' && options !== undefined) throw Error('<options> parameter if specified must be an object');
-    let prefs = mergeOpts(options || {}, {
+class ReadMerger extends TransformWithMiddleWare {
+  constructor() {
+    super({
       objectMode: true,
-      files: files.map((file, index) => {
-        let stat = fs.statSync(file);
-        if (stat.isDirectory()) throw Error('Cant merge folders, is this really part of a file');
-        else if (!stat.isFile()) throw Error('Specified part file is not valid');
-        return {
-          path: file,
-          index,
-          stat,
-          parsed: path.parse(file),
-        };
-      }),
-    });
-    super(prefs);
-    this.prefs = prefs;
-
-    let specs = (this.specs = {
-      totalSize: prefs.files.reduce((a, b) => a + b.stat.size, 0),
-      percentage() {
-        return prefs.files.map(({ stat }) => (stat.size / this.totalSize) * 100);
+      transform([size, rStream], _encoding, callback) {
+        this.pipeAll(rStream, size)
+          .on('data', data => this.push(data))
+          .once('end', callback);
       },
     });
-    // Open a stream to the output file
-    // In a generator, generate the next file's stream
-    // On data, write into output file
-    // Do this for the next files
-    // On last file, end the output stream, end the globa stream
-    let streamGenerator = (function*(files) {
-      let bytesRead = 0;
-      for (let { index, path, stat } of files) {
-        index = parseInt(index);
-        yield {
-          index,
-          nParts: files.length,
-          totalSize: specs.totalSize,
-          number: index + 1,
-          indexPad: index.toString().padStart(`${files.length - 1}`.length, 0),
-          numberPad: (index + 1).toString().padStart(`${files.length}`.length, 0),
-
-          size: stat.size,
-          inputFile: path,
-          inputStreamOpts: {},
-          outputStreamOpts: { start: bytesRead },
-          outputFile: output,
-          specialFile: path,
-        };
-        bytesRead += stat.size;
-      }
-    })(prefs.files, output);
-    this.timesCalled = 0;
-    this._read = function(/* n */) {
-      if (this.timesCalled === files.length) return this.push(null);
-      this.timesCalled++;
-      this.push(streamGenerator.next().value);
-    };
+  }
+  /**
+   * Fuse readable streams data together to a single writable stream
+   * @param  {...[any, NodeJS.ReadableStream]} src Readable stream sources
+   * @param {number} src_0 Size of the chunk being added
+   * @param {NodeJS.ReadableStream} src_1 The readable stream itself
+   */
+  fuse(...src) {
+    let reader = Readable({
+      objectMode: true,
+      read() {},
+    });
+    if (src) src.reduce((reader, _reader) => (reader.push(_reader), reader), reader);
+    return reader;
   }
 }
 
 module.exports = {
   ReadChunker,
   ReadMerger,
-  WriteAttacher,
+  TransformWithMiddleWare,
 };
-
-/* 
-=== === ===
-==CHUNKER==
-=== === ===
-ReadChunker extends stream.Transform {
-  constructor(spec: number | {
-    length: number,
-    size: number,
-    total: number,
-    appendOverflow: boolean
-  }) => this,
-  use(label: string, (size: number, file: string, persist: {}) => stream.Transform) => this,
-  fiss(output: string | string[] | Buffer | Buffer[]) => stream.Writable,
-}
-
-let input = fs.createReadStream('./file');
-let chunker = new ReadChunker({length: 50})
-  .use(() => stream.Transform({
-    transform(v,_e,c) {
-      c(null, v);
-    }
-  }));
-let chunkerOutput = chnuker.fiss('./file%{index%}.txt');
-input.pipe(chunker).pipe(chunkerOutput);
-
-=== === ===
-==MERGER==
-=== === ===
-Create write stream to output file
-For every new slot, write content
-on'end', un-end
-
-Merger extends stream.Transform {
-  constructor() => this,
-  use(label: string, (size: number, file: string, persist: {}) => stream.Transform) => this,
-  fuse(input:
-    string
-    | string[]
-    | Buffer
-    | Buffer[]
-    | stream.Readable
-  ) => this,            // **--** Stage the input as a chunk slot until this.write called
-}
-
-let merger = new Merger()
-  .use(() => stream.Transform({
-    transform(v,_e,c) {
-      c(null, v);
-    }
-  }))
-  .fuse('./file')
-  .fuse(['./file2', './file3'])
-  .fuse(fs.createReadStream('./file3'));
-
-let output = fs.createWriteStream('./output.js');
-merger.pipe(output);
-*/

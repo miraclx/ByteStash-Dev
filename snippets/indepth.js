@@ -1,4 +1,8 @@
-let ProgressBar = require('../libs/ProgressBar');
+let ProgressBar = require('../libs/progress2');
+
+function padContent(val, all) {
+  return val.toFixed(0).padStart(Math.max(`${all}`.length, 3), ' ');
+}
 
 function main() {
   let max = 50 * 1024;
@@ -10,35 +14,32 @@ function main() {
       color: ['bgRed', 'white'],
     },
     template: [
-      'Percentage: [%{_percentage%}%]',
+      'Percentage: [%{percentage%}%]',
       'Total:      [%{total%}]',
-      'Completed:  [%{_completed%}]',
+      'Completed:  [%{completed%}]',
       'Remaining:  [%{remaining%}]',
       'Status:     %{message%}',
       '%{label%} |%{bar%}| [%{flipper%}]',
     ],
-    _template: {
-      remaining({ completed, total }) {
-        return (total - completed).toFixed(0).padStart(5, ' ');
-      },
-      _percentage({ percentage }) {
-        return percentage.toString().padStart(4, ' ');
-      },
-      _completed({ completed }) {
-        return completed.toFixed(0).padStart(5, ' ');
-      },
+    variables: {
+      total: ({ total }) => padContent(total, bar.total()),
+      completed: ({ completed }) => padContent(completed, bar.total()),
+      remaining: ({ completed, total }) => padContent(total - completed, bar.total()),
+      percentage: ({ percentage }) => padContent(percentage, bar.total()).slice(1),
     },
   });
+
   let interval = setInterval(function() {
-    let up = Math.floor(Math.random() * 10);
-    bar.tick(up, {
-      message: 'Updating with ' + up,
+    let up = Math.round(Math.random() * 2000);
+    if (!(bar.average().percentage % 10)) bar.opts.pulsate = !bar.opts.pulsate;
+    bar.value(bar.average().completed + up, {
+      message: `${bar.opts.pulsate ? 'Pulsating' : 'Updating'} + ${up}`,
     });
     if (bar.isComplete()) {
       clearInterval(interval);
       bar.end('The Progress Completed\n');
     }
-  }, 700);
+  }, 1500);
 }
 
 main();

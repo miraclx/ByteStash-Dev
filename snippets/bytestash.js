@@ -1,12 +1,16 @@
 let fs = require('fs'),
   path = require('path'),
+  zlib = require('zlib'),
   stream = require('stream'),
   crypto = require('crypto'),
+  _ = require('lodash'),
+  tmp = require('tmp'),
+  tar = require('tar-fs'),
   readlineSync = require('readline-sync'),
   totalSize = require('../libs/total-size'),
   parseBytes = require('../libs/parse-bytes'),
   { ReadChunker, ReadMerger } = require('../libs/split-merge'),
-  ProgressBar = require('../libs/ProgressBar');
+  ProgressBar = require('../libs/progress2');
 
 class XMAP {
   constructor(objectSpecs, bufSlots) {
@@ -65,15 +69,15 @@ class XMAP {
 
 function prepareProgress(size, slots, opts) {
   let progressStream = ProgressBar.stream(size, slots, {
+    forceFirst: true,
     bar: {
       filler: '=',
       header: '\ue0b0',
       color: ['bgRed', 'white'],
     },
     template: [
-      '%{attachedMessage%}',
-      '%{label%}|%{slot:bar%}| %{_percentage%}% %{_eta%}s [%{slot:size%}/%{slot:size:total%}]',
-      'Total:%{bar%} %{percentage%}% %{eta%}s [%{size%}/%{size:total%}]',
+      '|:{slot:bar}| :{slot:percentage}% :{slot:eta}s [:{slot:size}/:{slot:size:total}]',
+      '[:{bar}] :{percentage}% :{eta}s [:{size}/:{size:total}]',
     ],
     ...opts,
   });
@@ -147,7 +151,7 @@ function encrypt(input, output, callback) {
     .use(
       'cipher',
       ([{ chunkSize: size, finalChunk }, file], persist) => {
-        persist.index !== 10
+        persist.index !== 5
           ? persist.index++
           : ([persist.index, { salt: persist.salt, chunk_key: persist.chunk_key }] = [1, getKey(user_key)]);
         let { salt, chunk_key } = persist;
@@ -165,12 +169,12 @@ function encrypt(input, output, callback) {
         if (finalChunk) persist = {};
         return cipher;
       },
-      { index: 1, ...getKey(user_key) },
+      { index: 0, ...getKey(user_key) },
       error => console.log(`An error occurred:\n${error}`)
     )
     .use('progressBar', ([{ chunkSize, _number }, file]) =>
       progressStream.next(chunkSize, {
-        _template: { attachedMessage: `[${_number}] Writing to ${file}` },
+        variables: { tag: `[${_number}] Writing to ${file}` },
       })
     );
 
@@ -209,12 +213,13 @@ function decrypt(folder, output, callback) {
   console.log(`| Number of chunks: "${xmap.chunks.length}"`);
 
   let progressStream = prepareProgress(xmap.size, ProgressBar.slotsBySize(xmap.size, inputBlocks.map(block => block[0].size))).on(
-    'complete',
-    bar => {
-      bar.end('Complete\n');
-      if (callback) callback(output);
-    }
-  );
+      'complete',
+      bar => {
+        bar.end('Complete\n');
+        if (callback) callback(output);
+      }
+    ),
+    { bar } = progressStream;
 
   let user_key;
   do {
@@ -240,12 +245,11 @@ function decrypt(folder, output, callback) {
         }
         return crypto.createDecipheriv('aes-256-gcm', chunk_key, iv).setAuthTag(tag);
       },
-      {},
-      error => console.log(`An error occurred:\n${error}`)
+      error => error && bar.end(`An error occurred:\n${error}\n`)
     )
     .use('progressBar', ([{ size, file }], _persist) =>
       progressStream.next(size, {
-        _template: { attachedMessage: `Writing from ${file}` },
+        variables: { tag: `Writing from ${file}` },
       })
     );
 
@@ -254,14 +258,63 @@ function decrypt(folder, output, callback) {
     if (callback) callback(output);
   });
 
-  return stream.pipeline(
-    mergeStash,
-    merger,
-    fs.createWriteStream(output),
-    err => err && console.error('An error occurred\n' + err)
-  );
+  return stream.pipeline(mergeStash, merger, fs.createWriteStream(output), err => err && bar.end(`An error occurred\n${err}\n`));
 }
 
+function prepWorkSpace(notHome) {
+  let os = require('os');
+
+  let tmp = os.tmpdir(),
+    home = os.homedir(),
+    cache,
+    main,
+    folderName = '.bytestash';
+
+  try {
+    if (home && !notHome) main = path.join(home, folderName);
+    else if (tmp) main = path.join(tmp, folderName);
+    else main = path.join(process.cwd(), folderName);
+    cache = path.join(main, '.cache');
+    [main, cache].map(dir => fs.existsSync(dir) || fs.mkdirSync(dir));
+  } catch {
+    throw new Error('Unable to create a working directory');
+  }
+  return { main, cache };
+}
+
+function _encrypt(folder, output, callback) {
+  let allSize = totalSize(folder),
+    size = allSize.reduce((a, b) => a + b, 0);
+
+  let progressGen = ProgressBar.stream(size, ProgressBar.slotsBySize(size, allSize)),
+    chunker = new ReadChunker({ size: 5 * 10 ** 6 }),
+    writer = chunker.fiss(output);
+
+  let { cache } = prepWorkSpace(!true);
+
+  let tmpPath = tmp.fileSync({ prefix: 'byteX-', postfix: '.tgz', dir: cache });
+
+  let pack;
+
+  pack = tar
+    .pack(folder, {
+      mapStream(fStream, header) {
+        return fStream.pipe(progressGen.next(header.size));
+      },
+    })
+    .pipe(zlib.createGzip());
+
+  pack.once('finish', () => {
+    writer.once('finish', () => {
+      progressGen.bar.end('Compiled!, [%s => %s]\n', ...[size, writer.bytesWritten].map(val => parseBytes(val)));
+
+      if (callback) callback(tmpPath.name, output).on('finish', () => tmpPath.removeCallback());
+      else tmpPath.removeCallback();
+    });
+  });
+
+  pack.pipe(chunker).pipe(writer);
+}
 function exec(fn, name, callback, ...args) {
   if (!args.every(v => v !== undefined)) throw new Error('Please complete the argument list');
   console.log(`${name}: [${args.join(' -> ')}]`);
@@ -276,7 +329,7 @@ let engine = {
   '+-': [exec, [encrypt, '(Chunk, Encrypt) then (Decrypt, Merge)', args => folder => decrypt(folder, args[2])], [, , ,]],
 };
 
-function main(_method) {
+void (function(_method) {
   let _input,
     method,
     input = process.argv.slice(2);
@@ -285,9 +338,7 @@ function main(_method) {
   _input = [...block[1]];
   _input.push(...Object.assign([], block[2], input));
   block[0].call(null, ..._input);
-}
-
-main('ccrypt');
+})('ccrypt');
 
 /**
  * > node index [action?=encrypt] <input> <output> <?:extra>

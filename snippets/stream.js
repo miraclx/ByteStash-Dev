@@ -1,6 +1,6 @@
 let { createReadStream, statSync, createWriteStream } = require('fs'),
   Promise = require('bluebird'),
-  ProgressBar = require('../libs/ProgressBar'),
+  ProgressBar = require('../libs/progress2'),
   parseBytes = require('../libs/parse-bytes'),
   parseTemplate = require('../libs/parse-template'),
   totalSize = require('../libs/total-size');
@@ -65,7 +65,7 @@ function runExample(files, showLog = true) {
               reader
                 .pipe(
                   progressBars
-                    .next(statSync(reader.path).size, { _template: { in: block.in, out: result } })
+                    .next(statSync(reader.path).size, { variables: { in: block.in, out: result } })
                     .on('complete', () => resolve(result))
                     .on('error', reject)
                 )

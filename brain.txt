@@ -65,3 +65,28 @@ Mount the Fabric FS from the resulting tarball
 each chunk, random IV
 5 chunks, 1 random salt
 50 Chunks, 1 Encrypted Stash
+
+
+archiver
+tar-fs
+lodash
+readline-sync
+chalk
+ansi-styles
+bluebird
+
+(callback) ->
+  let compileStream = compile(inputFolder:string, options:{}) => ReadableStream{};
+  if (streamDirect)
+    compileStream
+      .pipe(WriteStream<tmpfile:string>)
+      .on("finish", () => callback(ReadStream<tmpfile:string>));
+  else callback(compileStream);
+(
+  () ->
+    inStream
+      .pipe(ReadChunker{...options}.use(label:string, function: () => Duplex))
+      .pipe(:ReadChunker.fiss(cacheFolder))
+);
+
+[ ] Add detection for zip files, so ignore forced compression to save time

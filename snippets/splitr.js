@@ -5,7 +5,7 @@ let fs = require('fs'),
   Promise = require('bluebird'),
   totalSize = require('../libs/total-size'),
   readdir2 = require('../libs/readdir2'),
-  ProgressBar = require('../libs/ProgressBar'),
+  ProgressBar = require('../libs/progress2'),
   { ReadChunker, ReadMerger } = require('../libs/split-merge');
 
 function getWriter(chunker, showCuts, printAtAll = 'y') {
@@ -22,15 +22,15 @@ function getWriter(chunker, showCuts, printAtAll = 'y') {
           ),
           ...(authKeys.includes(showCuts)
             ? [
-                `[${data
+                `\u2502${data
                   .toString('hex')
                   .padEnd(chunker.spec.splitSize * 2, '.')
-                  .replace(/(.)(?=(.{2})+$)/g, '$1 ')}]`,
+                  .replace(/(.)(?=(.{2})+$)/g, '$1 ')}\u2502`,
                 '<=>',
-                `|${data
+                `\u2502${data
                   .toString('ascii')
                   .replace(/\n/g, '↵')
-                  .padEnd(chunker.spec.splitSize, '.')}|` || '',
+                  .padEnd(chunker.spec.splitSize, '.')}\u2502` || '',
               ]
             : [`Size: ${chunkPartData.size}`])
         );
@@ -41,16 +41,14 @@ function getWriter(chunker, showCuts, printAtAll = 'y') {
 
 function prepareProgress(size, slots, opts) {
   let progressStream = ProgressBar.stream(size, slots, {
+    length: 150,
     bar: {
-      filler: '=',
-      header: '\ue0b0',
       color: ['bgRed', 'white'],
+      filler: '=',
+      // header: '\ue0b0',
+      // separator: '|',
     },
-    template: [
-      '%{attachedMessage%}',
-      '%{label%}|%{slot:bar%}| %{_percentage%}% %{_eta%}s [%{slot:size%}/%{slot:size:total%}]',
-      'Total:%{bar%} %{percentage%}% %{eta%}s [%{size%}/%{size:total%}]',
-    ],
+    forceFirst: !false,
     ...opts,
   });
   progressStream.bar.label('Loading');
@@ -60,14 +58,12 @@ function prepareProgress(size, slots, opts) {
 function _chunk(file, showCuts, printAtAll) {
   let { size } = fs.statSync(file);
 
-  let reader = fs.createReadStream(file, {
-    highWaterMark: showCuts == 'y' ? 27 : 16 ** 4,
-  });
+  let reader = fs.createReadStream(file, { highWaterMark: showCuts == 'y' ? 27 : 16 ** 4 });
 
   let chunker = new ReadChunker({
     size: showCuts == 'y' ? 30 : null,
-    length: 50,
     total: size,
+    length: 50,
     appendOverflow: false,
   });
 
@@ -83,6 +79,7 @@ function mainChunk(file, output, callback) {
       highWaterMark: 16 ** 4,
     }),
     chunker = new ReadChunker({
+      size: 10 * 2 ** 20,
       length: 50,
       total: size,
       appendOverflow: false,
@@ -95,17 +92,17 @@ function mainChunk(file, output, callback) {
     (...[, index]) =>
       index + 1 !== chunker.spec.numberOfParts ? chunker.spec.splitSize : chunker.spec.lastSplitSize || chunker.spec.splitSize
   );
-
-  let progressStream = prepareProgress(size, ProgressBar.slotsBySize(size, slots));
+  // ProgressBar.slotsBySize(size, slots)
+  let progressStream = prepareProgress(size, ProgressBar.slotsBySize(size, slots)).on(
+      'complete',
+      bar => (bar.end('Complete\n'), callback && callback(bar))
+    ),
+    { bar } = progressStream;
 
   chunker.use('progressBar', ([{ chunkSize }, file], _persist) =>
-    progressStream.next(chunkSize, {
-      _template: { attachedMessage: `Writing to ${file}` },
-    })
+    progressStream.next(chunkSize, { variables: { tag: `Writing to ${file}\n` } })
   );
-
-  progressStream.on('complete', bar => bar.end('Complete\n'));
-  if (callback) progressStream.on('complete', callback);
+  let total = 0;
   reader.pipe(chunker).pipe(chunkerOutput);
 }
 
@@ -122,11 +119,7 @@ function mainMerge(input, output, callback) {
   let progressStream = prepareProgress(size, ProgressBar.slotsBySize(size, inputBlocks.map(block => block[0]))),
     { bar } = progressStream;
 
-  merger.use('progressBar', ([size], _persist) =>
-    progressStream.next(size, {
-      _template: { attachedMessage: `Writing to ${output}` },
-    })
-  );
+  merger.use('progressBar', ([size], _persist) => progressStream.next(size, { variables: { tag: `Writing to ${output}\n` } }));
 
   progressStream.on('complete', () => bar.end('Complete\n'));
   if (callback) progressStream.on('complete', callback);

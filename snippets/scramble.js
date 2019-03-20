@@ -1,6 +1,6 @@
 let readline = require('readline-sync'),
   randomiZe = require('../libs/mosr'),
-  ProgressBar = require('../libs/ProgressBar');
+  ProgressBar = require('../libs/progress2');
 
 function ranger(args = '') {
   let input = args.trim(),
