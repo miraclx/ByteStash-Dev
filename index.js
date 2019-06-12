@@ -1,6 +1,4 @@
-let { log } = console,
-  path = require('path'),
-  { initCli, parseTemplate, core } = require('./bridge');
+let { initCli, core } = require('./bridge');
 
 initCli(
   process.argv,
@@ -8,19 +6,9 @@ initCli(
     version: '0.0.1',
   },
   {
-    ls: (stash, { deep }) => log((deep ? '[DEEP] ' : '') + (stash ? `Listing contents of ${stash}` : `Listing all stashes`)),
-    init: (dir, dirs) => (log(`Creating stash [${dir}]...done`), dirs.map(dir => log(`Adding [${dir}]...done`))),
-    push: (stash, dirs, { path: _ = '' }) => dirs.map(dir => log(`Adding [${dir}] into [${path.join(stash, _)}]...done`)),
-    sync: (stash, { server = '' }) =>
-      log(`Pushing [${stash}] to [${parseTemplate(server, { poolID: (Math.random() * 500 + 0.5) | 0 })}]...done`),
-    user: (user, args) => console.log(args),
-    owner: (stash, args) => console.log(args),
-    shell: (stash, args) => console.log(args),
-    _switch: (user, args) => console.log(args),
-    whoami: args => console.log(args),
-    adduser: args => console.log(args),
     encrypt: core.encrypt,
     decrypt: core.decrypt,
+    cachemgr: core.cachemgr,
     _encrypt(
       inputFolder,
       {
@@ -73,7 +61,7 @@ initCli(
     },
     _decrypt(
       inputStash,
-      { key, out, log, bar, color, stream, forceDir, logFile, verboseLevel, verboseInText, outRelativePath, outResolvedPath }
+      { key, out, log, bar, color, forceDir, logFile, verboseLevel, verboseInText, outRelativePath, outResolvedPath }
     ) {
       console.log(`[~] Archive from: ${inputStash}`);
       console.log(`[~] Output stash: ${out}`);
@@ -81,7 +69,6 @@ initCli(
       console.log(`[~] - Resolved Output stash path: (${outResolvedPath})`);
       console.log(`[~] Force Dir: ${forceDir}`);
       console.log(`[~] Password: ${key}`);
-      console.log(`[~] Process: ${stream ? 'direct' : 'procedural'}`);
       console.log(`[~] Colorize: ${color}`);
       console.log(`[~] Show Progress bar: ${bar}`);
       console.log(` - [~] Log? ${log}`);

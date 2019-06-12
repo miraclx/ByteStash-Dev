@@ -4,25 +4,7 @@ let fs = require('fs'),
   stream = require('stream'),
   zlib = require('zlib'),
   tar_fs = require('tar-fs'),
-  XMAP = require('./libs/xmap'),
-  ProgressBar = require('./libs/progress2');
-
-function prepProgress(size, slots, opts) {
-  let progressStream = ProgressBar.stream(size, slots, {
-    bar: {
-      filler: '=',
-      header: '\ue0b0',
-    },
-    template: [
-      '%{attachedMessage%}',
-      '%{label%}|%{slot:bar%}| %{_percentage%}% %{_eta%}s [%{slot:size%}/%{slot:size:total%}]',
-      'Total:%{bar%} %{percentage%}% %{eta%}s [%{size%}/%{size:total%}]',
-    ],
-    ...opts,
-  });
-  progressStream.bar.label('Loading');
-  return progressStream;
-}
+  { isBarGen } = require('../_dev.libs/xprogress');
 
 function prepWorkSpace(notHome) {
   let os = require('os');
@@ -47,10 +29,7 @@ function prepWorkSpace(notHome) {
 }
 
 module.exports = {
-  XMAP,
-  prepProgress,
   prepWorkSpace,
-  chunk(inStream, size) {},
   /**
    *
    * @param {String} input Input path to be compiled
@@ -62,13 +41,13 @@ module.exports = {
       name: '',
       action: 'compile',
       actionStr: 'Compressing',
-      actionMsg: `:{actionStr} [:{name}:{slot:size}/:{slot:size:total}]...:{slot:eta}s`,
+      actionMsg: `:{actionStr} [:{name}:{slot:size}/:{slot:size:total}]...:{slot:eta}`,
       ...args,
     });
     let _stream = stack
       ? tar_fs.pack(
           input,
-          ProgressBar.isBarGen(progressGen) && !direct
+          isBarGen(progressGen) && !direct
             ? {
                 mapStream: (fStream, headers) =>
                   fStream.pipe(
@@ -91,16 +70,16 @@ module.exports = {
       );
     }
   },
-  decompile(_stream, out, { size, stack, compressID, progressGen }, callback) {
+  decompile(_stream, out, { stack, compressID, progressGen }, callback) {
     if (compressID) _stream = _stream.pipe(compressID == 1 ? zlib.createGunzip() : zlib.createDeflate());
-    stream.pipeline(
+    return stream.pipeline(
       _stream,
       stack
-        ? tar_fs.extract(out, {
-            mapStream: (fStream, headers) =>
-              fStream.pipe(progressGen.next(headers.size, { variables: { file: path.join('/', headers.name) } })),
-          })
-        : fs.createWriteStream(out).pipe(progressGen.next(size, { variables: { file: path.join('/', out) } })),
+        ? tar_fs.extract(
+            out,
+            isBarGen(progressGen) ? { map: headers => ((progressGen.bar.opts.variables['file'] = headers.name), headers) } : {}
+          )
+        : fs.createWriteStream(out),
       callback
     );
   },

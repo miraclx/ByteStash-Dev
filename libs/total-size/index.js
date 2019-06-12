@@ -13,7 +13,7 @@
 
 var { statSync } = require('fs'),
   { flattenDeep } = require('lodash'), // requires lodash for flattenDeep()
-  readdir2 = require('../libs/readdir2');
+  readdir2 = require('../readdir2');
 
 function getFolderContentSizes(dir) {
   return readdir2(dir).map(dir => {

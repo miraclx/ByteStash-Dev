@@ -18,15 +18,21 @@
   "author": "Miraculous Owonubi <omiraculous@gmail.com>",
   "license": "Apache-2.0",
   "dependencies": {
-    "archiver": "^3.0.0",
-    "bytes": "^3.0.0",
-    "chalk": "^2.4.1",
-    "commander": "^2.17.1",
-    "lodash": "^4.17.10",
-    "progress-stream": "^2.0.0",
-    "readline-sync": "^1.4.9",
+    "commander": "^2.20.0",
+    "lodash": "^4.17.11",
+    "ninja_query": "^0.2.2",
+    "stringd": "^1.4.1",
     "tar-fs": "^1.16.3",
-    "through2": "^2.0.3",
-    "tmp": "0.0.33"
+    "tmp": "0.0.33",
+    "xbytes": "^1.2.4",
+    "xprogress": "^0.7.0"
+  },
+  "devDependencies": {
+    "eslint": "^5.16.0",
+    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-config-prettier": "^4.3.0",
+    "eslint-plugin-import": "^2.17.3",
+    "eslint-plugin-prettier": "^3.1.0",
+    "prettier": "^1.18.0"
   }
 }
