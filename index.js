@@ -3,7 +3,7 @@ let { initCli, core } = require('./bridge');
 initCli(
   process.argv,
   {
-    version: '0.0.1',
+    version: '0.0.9',
   },
   {
     encrypt: core.encrypt,

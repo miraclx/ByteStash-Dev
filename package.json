@@ -1,6 +1,6 @@
 {
   "name": "bytestash",
-  "version": "1.0.0",
+  "version": "0.0.9",
   "description": "A secure archive chunking system with AES encryption",
   "main": "index.js",
   "scripts": {
