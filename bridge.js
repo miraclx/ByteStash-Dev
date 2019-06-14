@@ -237,7 +237,11 @@ module.exports = {
       if (clean && (files = module.exports.getMap(cache)).length) {
         console.log('Removing...');
         for (let [index, file] of Object.entries(files))
-          console.log(` [\u2022] (${+index + 1}) ${path.basename(file)} @ ${(humanReadable ? xbytes : v => v)(totalSize(file))}`),
+          console.log(
+            ` [\u2022] (${`${+index + 1}`.padStart(`${files.length}`.length, ' ')}) ${path.basename(file)} @ ${(humanReadable
+              ? xbytes
+              : v => v)(totalSize(file))}`
+          ),
             fs.unlinkSync(file);
         console.log('Rebuilding cache...');
         prepWorkSpace();
