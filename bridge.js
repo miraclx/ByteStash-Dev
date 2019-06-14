@@ -77,7 +77,7 @@ module.exports = {
               progressID: ({ action }) => `${!options.stream ? `(${action == 'compile' ? 1 : 2}/2) ` : ''}`,
               ['slot:bar']: ({ action }) =>
                 `:{prepend}|:{slot:bar}| [:{slot:eta}] [:3{slot:percentage}%] ${
-                  action == 'chunk' ? '[:{slot:size}/:{slot:size:total}]' : ''
+                  action == 'chunk' ? '[:{slot:size}/:{slot:size:total}] [:{slot:eta}]' : ''
                 }`,
               ['action:bar']: () => `:{prepend}[:{bar}] :{size}:{size:total}`,
               ['size:total']: () => (!options.stream ? `/:{size:total} [:{eta}]` : ''),

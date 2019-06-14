@@ -41,7 +41,7 @@ module.exports = {
       name: '',
       action: 'compile',
       actionStr: 'Compressing',
-      actionMsg: `:{actionStr} [:{name}:{slot:size}/:{slot:size:total}]...:{slot:eta}`,
+      actionMsg: `:{actionStr}:{name}`,
       ...args,
     });
     let _stream = stack
@@ -52,7 +52,7 @@ module.exports = {
                 mapStream: (fStream, headers) =>
                   fStream.pipe(
                     progressGen.next(headers.size, {
-                      variables: template({ name: `${headers.name} -> `, actionStr: 'Compiling' }),
+                      variables: template({ name: ` [${headers.name}]`, actionStr: 'Compiling' }),
                     })
                   ),
               }
@@ -79,7 +79,7 @@ module.exports = {
             out,
             isBarGen(progressGen) ? { map: headers => ((progressGen.bar.opts.variables['file'] = headers.name), headers) } : {}
           )
-        : fs.createWriteStream(out),
+        : ((progressGen.bar.opts.variables['file'] = out), fs.createWriteStream(out)),
       callback
     );
   },
