@@ -64,7 +64,7 @@ module.exports = {
     if (direct) callback(_stream, Infinity);
     else if (!stack && !compressID) callback(_stream, size);
     else {
-      let tmpPath = tmp.fileSync({ prefix: 'byteX-', postfix: '.tgz', dir: cacheDir, keep: true });
+      let tmpPath = tmp.fileSync({ prefix: 'byteX-', postfix: stack ? '.tgz' : '.gz', dir: cacheDir, keep: true });
       stream.pipeline(_stream, fs.createWriteStream(tmpPath.name), () =>
         callback(fs.createReadStream(tmpPath.name), fs.statSync(tmpPath.name).size).on('finish', tmpPath.removeCallback)
       );
