@@ -154,7 +154,11 @@ module.exports = {
               );
             if (!fs.existsSync(options.out)) fs.mkdirSync(options.out);
             function complete() {
-              bar.end('Test Stash Execution Complete!\n');
+              bar.end(
+                `Test Stash Execution Complete!\nCompressed percentage: ${(100 - (xmap.compress.size / xmap.size) * 100).toFixed(
+                  2
+                )}% [${xbytes(xmap.size)} => ${xbytes(xmap.compress.size)}]\n`
+              );
               let output_file = path.join(options.out, '.xmap'),
                 content = Buffer.from(xmap.stringify('hex', 2));
               console.log(`Writing map to ${output_file}`);
