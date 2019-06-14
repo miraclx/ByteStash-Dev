@@ -187,23 +187,19 @@ module.exports = {
           merger = new ReadMerger(),
           { cache } = prepWorkSpace(),
           mergeStash = merger.fuse(...inputBlocks),
-          progressGen = ProgressBar.stream(
-            xmap.compress.size,
-            ProgressBar.slotsBySize(xmap.compress.size, xmap.chunks.map(v => v.size)),
-            {
-              forceFirst: xmap.chunks.length > 20,
-              bar: {
-                separator: '|',
-              },
-              variables: { ['chunk:total']: xmap.chunks.length },
-              template: [
-                '(:{chunk:number}/:{chunk:total}): :{chunk:file}',
-                ' Decrypting: ":{file}" [:{flipper}]',
-                ' [\u2022] |:{slot:bar}| [:3{slot:percentage}%] :{slot:eta} [:{slot:size}/:{slot:size:total}]',
-                ' [+] [:{bar}] [:3{percentage}%] :{eta} [:{size}/:{size:total}]',
-              ],
-            }
-          ).on('complete', () => progressGen.bar.end('Decryption complete!\n'));
+          progressGen = ProgressBar.stream(xmap.compress.size, xmap.chunks.map(v => v.size), {
+            forceFirst: xmap.chunks.length > 20,
+            bar: {
+              separator: '|',
+            },
+            variables: { ['chunk:total']: xmap.chunks.length },
+            template: [
+              '(:{chunk:number}/:{chunk:total}): :{chunk:file}',
+              ' Decrypting: ":{file}" [:{flipper}]',
+              ' [\u2022] |:{slot:bar}| [:3{slot:percentage}%] :{slot:eta} [:{slot:size}/:{slot:size:total}]',
+              ' [+] [:{bar}] [:3{percentage}%] :{eta} [:{size}/:{size:total}]',
+            ],
+          }).on('complete', () => progressGen.bar.end('Decryption complete!\n'));
         merger
           .use('decipher', ([{ iv, tag, salt, file, index }], persist) => {
             progressGen.bar.opts.variables['chunk:file'] = file;
