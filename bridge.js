@@ -205,15 +205,19 @@ module.exports = {
             ],
           }).on('complete', () => progressGen.bar.end('Decryption complete!\n'));
         merger
-          .use('decipher', ([{ iv, tag, salt, file, index }], persist) => {
-            progressGen.bar.opts.variables['chunk:file'] = file;
-            progressGen.bar.opts.variables['chunk:number'] = index + 1;
-
+          .use('decipher', ([{ iv, tag, salt }], persist) => {
             let chunk_key;
             if (persist.tag !== tag) [persist.tag, chunk_key] = [tag, crypto.pbkdf2Sync(userInputKey, salt, 10000, 32, 'sha256')];
             return crypto.createDecipheriv('aes-256-gcm', chunk_key, iv).setAuthTag(tag);
           })
-          .use('progressBar', ([{ size }]) => progressGen.next(size));
+          .use('progressBar', ([{ size, file, index }]) =>
+            progressGen.next(size, {
+              variables: {
+                ['chunk:file']: file,
+                ['chunk:number']: index + 1,
+              },
+            })
+          );
         decompile(
           mergeStash.pipe(merger),
           options.out,
