@@ -8,7 +8,7 @@ let path = require('path'),
  * @param {commander} commander The commander instance
  * @param {defaultCliHandles} param1 CLI Handles for commands
  */
-function attachCommands(commander, { variables, encrypt, decrypt, cachemgr }) {
+function attachCommands(commander, { variables, encrypt, decrypt, cachemgr, clean }) {
   commander
     .usage('[<command> [<content...> [options]]] [-h]')
     .option('-l, --log [file]', 'log the output to file (default: runtime.xlog)')
@@ -62,6 +62,13 @@ function attachCommands(commander, { variables, encrypt, decrypt, cachemgr }) {
     .option('-h, --human-readable', 'Calculate the size of the cache')
     .action(cachemgr);
 
+  commander
+    .command('clean <stash>')
+    .description('Clean a stash from unnecessary contents')
+    .option('-i, --interractive', 'Clean the stash in interractive mode')
+    .option('-h, --human-readable', 'Display the byte sizes in human readable format')
+    .option('-v, --verbose', 'Show verbose output')
+    .action(clean);
   return commander;
 }
 

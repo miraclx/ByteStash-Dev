@@ -252,5 +252,51 @@ module.exports = {
         printCacheData();
       }
     },
+    clean(folder, opts) {
+      if (!fs.statSync(folder).isDirectory()) throw Error(`[${folder}] must be an existent file or directory stash`);
+      let _xmap = path.join(folder, '.xmap');
+      if (!fs.existsSync(_xmap)) throw Error('Unable to locate and parse xmap file');
+      function processClean() {
+        let xmap = XMAP.parseFile(_xmap);
+        let legitFiles = xmap.chunks.map(v => v.file);
+        let uselessFiles = readdir2(folder)
+          .filter(file => path.basename(file) !== '.xmap')
+          .filter(content => !legitFiles.includes(path.basename(content)))
+          .map(file => ({ file, name: path.basename(file), size: fs.statSync(file).size }));
+        if (uselessFiles.length === 0) return console.log(`\x1b[31m[!]\x1b[0m No extraneous files to clean!`);
+        let parseByte = size => (opts.humanReadable ? xbytes(size) : size);
+        function processRemove(uselessFiles) {
+          uselessFiles.forEach(({ file, size }) => {
+            let failed = false;
+            if (opts.verboseLevel) process.stdout.write(`[\u2022] ${file} @ ${parseByte(size)}...`);
+            try {
+              if (fs.statSync(file).isDirectory()) fs.rmdirSync(file);
+              else fs.unlinkSync(file);
+            } catch {
+              failed = true;
+            }
+            if (opts.verboseLevel && !failed) process.stdout.write(fs.existsSync(file) ? 'failed\n' : `done\n`);
+          });
+        }
+        if (opts.interractive)
+          ninjaQuery(
+            ninjaQuery.extend(
+              'confirm',
+              uselessFiles.map(({ name, size }, index) => ({
+                name: `${index}`,
+                message: `Remove [${name}]`,
+                suffix: ` @ ${parseByte(size)}`,
+              }))
+            )
+          ).then(results =>
+            processRemove(
+              Object.entries(results).reduce((arr, [index, remove]) => (remove && arr.push(uselessFiles[index]), arr), [])
+            )
+          );
+        else processRemove(uselessFiles);
+      }
+      // processClean();
+      passwordQuery('Please enter the password for stash :', false).then(({ password }) => processClean(password));
+    },
   },
 };

@@ -9,6 +9,7 @@ initCli(
     encrypt: core.encrypt,
     decrypt: core.decrypt,
     cachemgr: core.cachemgr,
+    clean: core.clean,
     _encrypt(
       inputFolder,
       {
