@@ -12,8 +12,8 @@ let fs = require('fs'),
   readdir2 = require('./libs/readdir2'),
   totalSize = require('./libs/total-size'),
   // LIVE LIBS
-  ProgressBar = require('../_dev.libs/xprogress'),
-  { ReadChunker, ReadMerger } = require('../_dev.libs/split-merge');
+  ProgressBar = require('xprogress'),
+  { ReadChunker, ReadMerger } = require('split-merge');
 
 function passwordQuery(query, confirm = true) {
   return ninjaQuery.password(

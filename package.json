@@ -21,6 +21,7 @@
     "commander": "^2.20.0",
     "lodash": "^4.17.11",
     "ninja_query": "^0.2.2",
+    "split-merge": "^0.1.0",
     "stringd": "^1.4.1",
     "tar-fs": "^1.16.3",
     "tmp": "0.0.33",

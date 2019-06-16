@@ -4,7 +4,7 @@ let fs = require('fs'),
   stream = require('stream'),
   zlib = require('zlib'),
   tar_fs = require('tar-fs'),
-  { isBarGen } = require('../_dev.libs/xprogress');
+  { isBarGen } = require('xprogress');
 
 function prepWorkSpace(notHome) {
   let os = require('os');
