@@ -79,7 +79,8 @@ module.exports = {
             out,
             isBarGen(progressGen) ? { map: headers => ((progressGen.bar.opts.variables['file'] = headers.name), headers) } : {}
           )
-        : ((progressGen.bar.opts.variables['file'] = out), fs.createWriteStream(out)),
+        : ((progressGen.bar.opts.variables['file'] = out == process.stdout ? 'stdout' : out),
+          out instanceof stream.Stream ? out : fs.createWriteStream(out)),
       callback
     );
   },
