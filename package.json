@@ -7,8 +7,8 @@
     "test": "node test"
   },
   "bin": {
-    "xtash": "cli.js",
-    "bytestash": "cli.js",
+    "xtash": "index.js",
+    "bytestash": "index.js"
   },
   "keywords": [
     "bytes",

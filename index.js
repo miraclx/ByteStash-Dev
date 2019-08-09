@@ -1,3 +1,4 @@
+#!node
 let { initCli, core } = require('./bridge');
 
 initCli(
