@@ -6,6 +6,10 @@
   "scripts": {
     "test": "node test"
   },
+  "bin": {
+    "xtash": "cli.js",
+    "bytestash": "cli.js",
+  },
   "keywords": [
     "bytes",
     "secure",
