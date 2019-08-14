@@ -191,7 +191,7 @@ module.exports = {
           merger = new ReadMerger(),
           { cache } = prepWorkSpace(),
           mergeStash = merger.fuse(...inputBlocks),
-          progressGen = ProgressBar.stream(xmap.compress.size, xmap.chunks.map(v => v.size), {
+          progressGen = ProgressBar.stream(xmap.compress.size, Infinity, {
             forceFirst: xmap.chunks.length > 20,
             bar: {
               separator: '|',
