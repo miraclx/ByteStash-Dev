@@ -23,21 +23,21 @@
   "license": "Apache-2.0",
   "dependencies": {
     "commander": "^2.20.0",
-    "lodash": "^4.17.11",
-    "ninja_query": "^0.3.0",
+    "lodash": "^4.17.15",
+    "ninja_query": "^0.3.3",
     "split-merge": "^0.2.0",
-    "stringd": "^1.4.1",
+    "stringd": "^1.5.1",
     "tar-fs": "^1.16.3",
     "tmp": "0.0.33",
-    "xbytes": "^1.2.4",
-    "xprogress": "^0.7.0"
+    "xbytes": "^1.4.0",
+    "xprogress": "^0.9.9"
   },
   "devDependencies": {
     "eslint": "^5.16.0",
-    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-config-airbnb-base": "^13.2.0",
     "eslint-config-prettier": "^4.3.0",
-    "eslint-plugin-import": "^2.17.3",
+    "eslint-plugin-import": "^2.18.2",
     "eslint-plugin-prettier": "^3.1.0",
-    "prettier": "^1.18.0"
+    "prettier": "^1.18.2"
   }
 }
