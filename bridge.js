@@ -222,7 +222,7 @@ module.exports = {
           mergeStash.pipe(merger),
           process.stdout.isTTY ? options.out : process.stdout,
           { stack: xmap.type == 'folder', cacheDir: cache, compressID: xmap.compress.id, progressGen },
-          err => (err ? progressGen.bar.print(`An error occurred:\n${err}`) : progressGen.bar.print('Success'))
+          err => (err ? progressGen.bar.end(`\x1b[31m[!]\x1b[0m An error occurred:\n${err}`) : progressGen.bar.end('Success'))
         );
       }
 
